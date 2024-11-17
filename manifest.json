@@ -1,0 +1,20 @@
+{
+  "name": "야미 그린농장",
+  "short_name": "야미그린농장",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#d4af37",
+  "icons": [
+    {
+      "src": "/assets/images/icon_yammi.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/images/icon_yammi.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

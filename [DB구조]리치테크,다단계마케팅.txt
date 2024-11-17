@@ -1,0 +1,361 @@
+//회원
+
+CREATE TABLE `users` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `login_id` varchar(50) NOT NULL COMMENT '로그인 ID',
+  `name` varchar(50) NOT NULL COMMENT '이름',
+  `email` varchar(100) NOT NULL COMMENT '이메일',
+  `phone` varchar(20) NOT NULL COMMENT '전화',
+  `country` varchar(20) DEFAULT NULL COMMENT '국적',
+  `rank` varchar(10) NOT NULL DEFAULT '회원' COMMENT '직급',
+  `referred_by` int(11) DEFAULT NULL COMMENT '추천인 (referrer id)',
+  `sponsored_by` int(11) DEFAULT NULL COMMENT '후원인 (sponsor id)',
+  `position` enum('left','right') DEFAULT NULL COMMENT '좌우 위치',
+  `point` decimal(15,4) DEFAULT 0.0000 COMMENT '포인트충전',
+  `usdt` decimal(15,6) DEFAULT NULL COMMENT 'usdt(테더)',
+  `stock` int(11) unsigned DEFAULT NULL COMMENT '주식수',
+  `token` decimal(15,2) unsigned zerofill DEFAULT 0000000000000.00 COMMENT '토큰지급량',
+  `myAmount` decimal(15,2) DEFAULT 0.00 COMMENT '본인 누적 구매 금액',
+  `referral_count` int(11) DEFAULT 0 COMMENT '직접 추천한 회원 수',
+  `left_amounts` decimal(15,0) DEFAULT 0 COMMENT '촤실적',
+  `left_members` int(11) DEFAULT 0 COMMENT '좌인원',
+  `right_amounts` decimal(15,2) DEFAULT 0.00 COMMENT '우실적',
+  `right_members` int(11) DEFAULT NULL COMMENT '우인원',
+  `commission_total` decimal(10,2) DEFAULT 0.00 COMMENT '수수료총액',
+  `bonus_referral` decimal(10,2) DEFAULT 0.00 COMMENT '현금포인트',
+  `bonus_rank` decimal(10,2) DEFAULT 0.00 COMMENT '마일리지포인트',
+  `bonus_center` decimal(10,2) DEFAULT 0.00 COMMENT '센터수당',
+  `referral_code` varchar(20) DEFAULT NULL COMMENT '추천인코드',
+  `referral_link` varchar(255) DEFAULT NULL COMMENT '추천인링크',
+  `qr_code` varchar(255) DEFAULT NULL COMMENT 'QR코드',
+  `organization` varchar(100) NOT NULL COMMENT '소속센터',
+  `password` varchar(255) NOT NULL,
+  `reset_token` varchar(100) DEFAULT NULL,
+  `reset_token_expires` datetime DEFAULT NULL,
+  `birth` varchar(50) DEFAULT NULL COMMENT '생년월일',
+  `address` varchar(200) DEFAULT NULL COMMENT '주소',
+  `bsc_address` varchar(100) DEFAULT NULL COMMENT 'BNB(BSC)주소',
+  `tron_address` varchar(100) DEFAULT NULL COMMENT '트론주소',
+  `stock_account` varchar(100) DEFAULT NULL COMMENT '삼성증권계좌',
+  `is_center` tinyint(1) DEFAULT 0 COMMENT '센터장인지 여부',
+  `status` enum('active','inactive') DEFAULT 'active' COMMENT '활성화,비활성화',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp() COMMENT '등록일',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `login_id` (`login_id`),
+  KEY `referred_by` (`referred_by`),
+  KEY `fk_users_sponsored_by` (`sponsored_by`),
+  CONSTRAINT `fk_users_referred_by` FOREIGN KEY (`referred_by`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_users_sponsored_by` FOREIGN KEY (`sponsored_by`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+
+
+
+
+//주문
+
+CREATE TABLE `orders` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `product_id` int(11) NOT NULL COMMENT '상품코드',
+  `price_unit` decimal(10,0) DEFAULT NULL COMMENT '단위가격',
+  `quantity` int(11) NOT NULL COMMENT '수량',
+  `total_amount` decimal(10,2) NOT NULL COMMENT '결제금액',
+  `point_used` decimal(10,2) DEFAULT NULL COMMENT '결제포인트',
+  `stock` int(11) DEFAULT NULL COMMENT '지급주식수',
+  `token` decimal(15,2) DEFAULT 0.00 COMMENT '지급토큰수량',
+  `payment_method` varchar(100) DEFAULT 'usdp' COMMENT '결제방식',
+  `cash_point_used` decimal(10,2) DEFAULT 0.00 COMMENT '현금포인트결제',
+  `mileage_point_used` decimal(10,2) DEFAULT 0.00 COMMENT '마일리지결제',
+  `payment_date` datetime DEFAULT NULL COMMENT '결제일',
+  `status` enum('pending','paid','completed','cancelled') DEFAULT 'pending' COMMENT '결제상태',
+  `paid_referral` enum('pending','completed') DEFAULT 'pending' COMMENT '추천수당정산여부',
+  `paid_status` enum('pending','completed') DEFAULT 'pending' COMMENT '직급수당정산상태',
+  `paid_center` enum('pending','completed') DEFAULT 'pending' COMMENT '센터피정산여부',
+  `currency` char(3) DEFAULT 'USD' COMMENT '화폐단위',
+  `ip_address` varchar(45) DEFAULT NULL COMMENT '주문IP',
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp() COMMENT '수정일',
+  `created_at` timestamp NULL DEFAULT current_timestamp() COMMENT '생성일',
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  KEY `product_id` (`product_id`),
+  CONSTRAINT `fk_orders_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+
+
+
+//상품
+REATE TABLE `products` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `detail` text DEFAULT NULL,
+  `price` decimal(10,2) NOT NULL,
+  `image_url` varchar(255) DEFAULT NULL,
+  `stock` int(11) DEFAULT NULL,
+  `token` decimal(15,2) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+
+
+//직급
+CREATE TABLE `rank_history` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `previous_rank` varchar(20) NOT NULL COMMENT '이전 직급',
+  `new_rank` varchar(20) NOT NULL COMMENT '새로운 직급',
+  `change_date` date NOT NULL COMMENT '직급 변경 일자',
+  `personal_sales` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT '본인 누적 매출 금액',
+  `direct_referrals` int(11) NOT NULL DEFAULT 0 COMMENT '직추천인 수',
+  `left_sales` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT '좌측 누적 매출 금액',
+  `right_sales` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT '우측 누적 매출 금액',
+  `lesser_leg_sales` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT '소실적 매출 금액',
+  `calculation_date` date NOT NULL COMMENT '실적 계산 날짜',
+  `change_reason` text DEFAULT NULL COMMENT '변경 사유',
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  KEY `idx_calculation_date` (`calculation_date`),
+  CONSTRAINT `fk_rank_history_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+
+
+//주식
+CREATE TABLE `stock_history` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `from_user_id` int(11) DEFAULT NULL,
+  `to_user_id` int(11) DEFAULT NULL,
+  `amount` int(11) NOT NULL COMMENT '거래 수량',
+  `transaction_date` datetime NOT NULL DEFAULT current_timestamp() COMMENT '거래 일자',
+  `transaction_type` varchar(50) NOT NULL COMMENT '거래 유형 (예: 구매, 선물)',
+  `order_id` int(11) DEFAULT NULL COMMENT '관련 주문 ID',
+  PRIMARY KEY (`id`),
+  KEY `from_user_id` (`from_user_id`),
+  KEY `to_user_id` (`to_user_id`),
+  CONSTRAINT `fk_stock_history_from_user` FOREIGN KEY (`from_user_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_stock_history_to_user` FOREIGN KEY (`to_user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+
+
+
+
+//토큰
+CREATE TABLE `token_history` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `from_user_id` int(11) DEFAULT NULL,
+  `to_user_id` int(11) DEFAULT NULL,
+  `amount` decimal(15,2) NOT NULL COMMENT '거래 수량',
+  `transaction_date` datetime NOT NULL DEFAULT current_timestamp() COMMENT '거래 일자',
+  `transaction_type` varchar(50) NOT NULL COMMENT '거래 유형 (예: 구매, 선물)',
+  `order_id` int(11) DEFAULT NULL COMMENT '관련 주문 ID',
+  PRIMARY KEY (`id`),
+  KEY `from_user_id` (`from_user_id`),
+  KEY `to_user_id` (`to_user_id`),
+  CONSTRAINT `fk_token_history_from_user` FOREIGN KEY (`from_user_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_token_history_to_user` FOREIGN KEY (`to_user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=22788 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+
+//추천보너스
+CREATE TABLE `bonus_referral` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `order_id` int(11) NOT NULL COMMENT '수당 발생 주문 ID',
+  `source_user_id` int(11) NOT NULL,
+  `source_amount` decimal(15,2) NOT NULL COMMENT '매출 금액',
+  `level` int(10) NOT NULL COMMENT '추천 단계 (1~5)',
+  `commission_rate` decimal(5,2) NOT NULL COMMENT '수수료 비율 (%)',
+  `amount` decimal(15,2) NOT NULL COMMENT '수당 금액',
+  `order_date` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp() COMMENT '수당발생일',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp() COMMENT '수당계산일',
+  PRIMARY KEY (`id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_order_id` (`order_id`),
+  KEY `idx_source_user_id` (`source_user_id`),
+  CONSTRAINT `fk_bonus_referral_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`),
+  CONSTRAINT `fk_bonus_referral_source_user` FOREIGN KEY (`source_user_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_bonus_referral_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='추천수당 내역'
+
+
+
+
+//직급보너스
+
+CREATE TABLE `bonus_rank` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `rank` varchar(10) NOT NULL COMMENT '수령자 직급',
+  `bonus_type` varchar(20) NOT NULL COMMENT '수당 유형',
+  `total_company_sales` decimal(15,2) NOT NULL COMMENT '회사 총 매출액',
+  `commission_rate` decimal(5,2) NOT NULL COMMENT '수수료 비율 (%)',
+  `amount` decimal(15,2) NOT NULL COMMENT '수당 금액',
+  `applicable_ranks` varchar(50) NOT NULL COMMENT '수당 적용 대상 직급',
+  `total_rank_members` int(11) NOT NULL COMMENT '수당 적용 대상 인원수',
+  `calculation_date` date NOT NULL COMMENT '수당 계산 날짜',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp() COMMENT '수당 발생 일시',
+  PRIMARY KEY (`id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_calculation_date` (`calculation_date`),
+  CONSTRAINT `fk_bonus_rank_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='직급수당 내역'
+
+
+
+
+//센터보너스
+CREATE TABLE `bonus_center` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `organization_id` int(11) NOT NULL COMMENT '센터 ID',
+  `user_id` int(11) NOT NULL,
+  `total_sales` decimal(15,2) NOT NULL COMMENT '센터 총 매출액',
+  `commission_rate` decimal(5,2) NOT NULL DEFAULT 2.00 COMMENT '수수료 비율 (%)',
+  `amount` decimal(15,2) NOT NULL COMMENT '센터장 수수료 금액',
+  `sales_date` date NOT NULL COMMENT '매출 집계 날짜',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp() COMMENT '수당 발생 일시',
+  PRIMARY KEY (`id`),
+  KEY `idx_organization_id` (`organization_id`),
+  KEY `idx_center_user_id` (`user_id`),
+  KEY `idx_sales_date` (`sales_date`),
+  CONSTRAINT `fk_bonus_center_organization` FOREIGN KEY (`organization_id`) REFERENCES `organizations` (`id`),
+  CONSTRAINT `fk_bonus_center_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='센터 수수료 내역'
+
+
+
+
+//센터소속
+
+CREATE TABLE `organizations` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) DEFAULT NULL COMMENT '센터장id',
+  `name` varchar(100) NOT NULL COMMENT '센터명',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+
+
+//트론지갑관리
+CREATE TABLE `tron_wallet` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `address` varchar(100) NOT NULL,
+  `private_key_encrypted` text NOT NULL,
+  `private_key` text DEFAULT NULL,
+  `public_key` text NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `fk_tron_wallet_user` (`user_id`),
+  CONSTRAINT `fk_tron_wallet_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+//충전
+
+CREATE TABLE `deposits` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `amount_usdt` decimal(15,6) NOT NULL COMMENT '송금신청한 USDT 금액',
+  `confirm_usdt` decimal(15,6) NOT NULL DEFAULT 0.000000 COMMENT '확인한 USDT금액',
+  `amount_usdp` decimal(15,4) NOT NULL COMMENT '충전된 USDP 금액',
+  `from_address` varchar(100) NOT NULL COMMENT '송금한 지갑 주소',
+  `to_address` varchar(100) NOT NULL COMMENT '회사 지갑 주소',
+  `transaction_id` varchar(100) NOT NULL COMMENT '트랜잭션 ID',
+  `scan_link` varchar(300) DEFAULT NULL COMMENT '블록체인 스캔 링크',
+  `status` enum('pending','completed','failed') DEFAULT 'pending' COMMENT '처리 상태',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `processed_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  CONSTRAINT `deposits_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+
+//출금
+CREATE TABLE `withdrawals` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `request_amount_usdp` decimal(15,4) NOT NULL COMMENT '출금 신청한 USDP 금액',
+  `fee_percentage` decimal(5,2) DEFAULT 3.00 COMMENT '출금 수수료 (%)',
+  `fee_amount` decimal(15,4) NOT NULL COMMENT '출금 수수료 금액',
+  `actual_amount_usdt` decimal(15,6) NOT NULL COMMENT '실제 출금되는 USDT 금액',
+  `to_address` varchar(100) NOT NULL COMMENT '사용자의 트론 주소',
+  `transaction_id` varchar(100) DEFAULT NULL COMMENT '출금 트랜잭션 ID',
+  `scan_link` varchar(500) DEFAULT NULL COMMENT '트론스캔링크',
+  `status` enum('pending','completed','failed') DEFAULT 'pending' COMMENT '처리 상태',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `processed_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  CONSTRAINT `withdrawals_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+
+
+
+//정산
+
+CREATE TABLE `settlement_jobs` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `job_date` date NOT NULL,
+  `start_time` datetime NOT NULL,
+  `end_time` datetime DEFAULT NULL,
+  `status` enum('pending','processing','completed','failed') DEFAULT 'pending',
+  `current_step` varchar(50) DEFAULT NULL COMMENT '현재 진행 단계',
+  `step_progress` int(11) DEFAULT 0 COMMENT '현재 단계 진행률(%)',
+  `error_message` text DEFAULT NULL,
+  `created_by` int(11) NOT NULL COMMENT '실행한 관리자 ID',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_job_date` (`job_date`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+
+
+
+//정산로그
+
+CREATE TABLE `settlement_step_logs` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `job_id` int(11) NOT NULL,
+  `step` varchar(50) NOT NULL COMMENT '진행 단계명',
+  `message` text NOT NULL COMMENT '진행 메시지',
+  `start_time` datetime NOT NULL,
+  `end_time` datetime DEFAULT NULL,
+  `status` enum('started','completed','failed') DEFAULT 'started',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `job_id` (`job_id`),
+  CONSTRAINT `settlement_step_logs_ibfk_1` FOREIGN KEY (`job_id`) REFERENCES `settlement_jobs` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+
+
+//공지사항
+CREATE TABLE `notices` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `title` varchar(255) NOT NULL,
+  `content` longtext NOT NULL,
+  `author` varchar(100) NOT NULL,
+  `views` int(11) DEFAULT 0,
+  `is_important` tinyint(1) DEFAULT 0,
+  `modal_content` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `status` enum('active','inactive') DEFAULT 'active',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci

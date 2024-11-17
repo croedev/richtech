@@ -1,0 +1,178 @@
+/*
+farm_db_history.txt
+version 1.0.0  초기버전
+version 1.0.1  총판 추가
+
+*/
+
+CREATE TABLE `users` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `email` varchar(100) NOT NULL,
+  `phone` varchar(20) NOT NULL,
+  `rank` varchar(10) NOT NULL DEFAULT '회원' COMMENT '직급',
+  `referred_by` int(11) DEFAULT NULL COMMENT '추천인',
+  `commission_total` decimal(10,2) DEFAULT 0.00 COMMENT '수수료총액',
+  `cash_points` decimal(10,2) DEFAULT 0.00 COMMENT '현금포인트',
+  `mileage_points` decimal(10,2) DEFAULT 0.00 COMMENT '마일리지포인트',
+  `nft_token` int(11) DEFAULT 0 COMMENT '보유한 NFT 수량',
+  `myQuantity` int(11) DEFAULT 0 COMMENT '본인 누적 구매 수량',
+  `myAmount` decimal(15,2) DEFAULT 0.00 COMMENT '본인 누적 구매 금액',
+  `myAgent` int(11) DEFAULT 0 COMMENT '산하 총판 수',
+  `myAgent_referral` int(11) DEFAULT 0 COMMENT '직접 추천한 총판 수',
+  `password` varchar(255) NOT NULL,
+  `referral_code` varchar(20) DEFAULT NULL COMMENT '추천인코드',
+  `referral_link` varchar(255) DEFAULT NULL COMMENT '추천인링크',
+  `qr_code` varchar(255) DEFAULT NULL COMMENT 'QR코드',
+  `organization` varchar(100) NOT NULL,
+  `reset_token` varchar(100) DEFAULT NULL,
+  `reset_token_expires` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `status` enum('active','inactive') DEFAULT 'active' COMMENT '활성화,비활성화',
+  `is_admin` tinyint(1) DEFAULT 0 COMMENT '관리자인지 여부',
+  `rank_change_date` date DEFAULT NULL COMMENT '승급일',
+  `rank_change_reason` text DEFAULT NULL COMMENT '승급사유',
+  `last_purchase_date` date DEFAULT NULL,
+  `total_purchases` int(11) DEFAULT 0,
+  `myTotal_quantity` int(11) DEFAULT 0 COMMENT '본인 및 산하 누적 구매 수량',
+  `myTotal_Amount` decimal(15,2) DEFAULT 0.00 COMMENT '본인 및 산하 누적 구매 금액',
+  `direct_volume` decimal(15,2) DEFAULT 0.00 COMMENT '직접 구매 실적',
+  `referrals_volume` decimal(15,2) DEFAULT 0.00 COMMENT '직접 추천인 구매 실적',
+  `ref_total_volume` decimal(15,2) DEFAULT 0.00 COMMENT '전체 하위라인 구매 실적',
+  `rank_update_date` date DEFAULT NULL COMMENT '마지막 직급 업데이트 일자',
+  `direct_referrals_count` int(11) DEFAULT 0 COMMENT '직접 추천한 회원 수',
+  `total_distributor_count` int(11) DEFAULT 0 COMMENT '하위 총판 수',
+  `special_distributor_count` int(11) DEFAULT 0 COMMENT '하위 특판 수',
+  `total_referrals_count` int(11) DEFAULT 0 COMMENT '전체 추천 회원 수',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `email` (`email`),
+  UNIQUE KEY `phone` (`phone`),
+  KEY `referred_by` (`referred_by`),
+  KEY `idx_myTotal_quantity` (`myTotal_quantity`),
+  KEY `idx_myAgent` (`myAgent`),
+  CONSTRAINT `users_ibfk_1` FOREIGN KEY (`referred_by`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=24520 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+CREATE TABLE `orders` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `product_id` int(11) NOT NULL,
+  `price_unit` decimal(10,0) DEFAULT NULL COMMENT '단위가격',
+  `quantity` int(11) NOT NULL COMMENT '수량',
+  `nft_token` int(11) DEFAULT 0 COMMENT '지급된 NFT 수량',
+  `total_amount` decimal(10,2) NOT NULL,
+  `payment_method` varchar(100) DEFAULT NULL,
+  `depositor_name` varchar(100) DEFAULT NULL,
+  `cash_point_used` decimal(10,2) DEFAULT 0.00,
+  `mileage_point_used` decimal(10,2) DEFAULT 0.00,
+  `payment_date` datetime DEFAULT NULL,
+  `status` enum('pending','paid','completed','cancelled') DEFAULT 'pending',
+  `paid_status` enum('pending','completed') DEFAULT 'pending',
+  `currency` char(3) DEFAULT 'KRW',
+  `vat_amount` decimal(10,2) DEFAULT 0.00,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `certificate_number` varchar(100) DEFAULT NULL,
+  `order_type` varchar(256) DEFAULT 'regular',
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  KEY `product_id` (`product_id`),
+  CONSTRAINT `orders_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `orders_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3184 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+CREATE TABLE `commissions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `commission_type` enum('direct_sales','distributor','special','total_distributor','special_distributor') NOT NULL COMMENT '수수료 유형',
+  `amount` decimal(10,2) NOT NULL,
+  `cash_point_amount` decimal(10,2) DEFAULT 0.00 COMMENT '캐시포인트로 지급된 금액',
+  `mileage_point_amount` decimal(10,2) DEFAULT 0.00 COMMENT '마일리지포인트로 지급된 금액',
+  `commission_rate` decimal(5,2) DEFAULT 0.00 COMMENT '적용된 수수료 비율',
+  `order_id` int(11) NOT NULL COMMENT '주문 ID',
+  `source_user_id` int(11) NOT NULL,
+  `source_amount` decimal(11,2) DEFAULT NULL COMMENT '발생매출',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  KEY `source_user_id` (`source_user_id`),
+  KEY `order_id` (`order_id`),
+  KEY `idx_commission_type` (`commission_type`),
+  CONSTRAINT `commissions_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `commissions_ibfk_2` FOREIGN KEY (`source_user_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `commissions_ibfk_3` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=35349 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+
+CREATE TABLE `products` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `description` text DEFAULT NULL,
+  `price` decimal(10,2) NOT NULL,
+  `image_url` varchar(255) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+CREATE TABLE `withdrawals` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL COMMENT '회원 ID',
+  `bank_name` varchar(100) NOT NULL COMMENT '은행명',
+  `withdrawal_amount` decimal(15,2) NOT NULL COMMENT '출금 요청 금액',
+  `fee` decimal(10,0) DEFAULT NULL COMMENT '수수료',
+  `account_number` varchar(100) NOT NULL COMMENT '계좌 번호',
+  `account_holder` varchar(100) NOT NULL COMMENT '예금주',
+  `request_date` datetime NOT NULL DEFAULT current_timestamp() COMMENT '출금 요청 일자',
+  `processed_date` datetime DEFAULT NULL COMMENT '처리 일자',
+  `status` enum('pending','completed','rejected') DEFAULT 'pending' COMMENT '출금 처리 상태',
+  `admin_comment` text DEFAULT NULL COMMENT '관리자 메모',
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  CONSTRAINT `withdrawals_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+CREATE TABLE `rank_history` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL COMMENT '회원 ID',
+  `previous_rank` varchar(10) NOT NULL COMMENT '이전 직급',
+  `new_rank` varchar(10) NOT NULL COMMENT '새로운 직급',
+  `change_date` datetime NOT NULL DEFAULT current_timestamp() COMMENT '직급 변경 일자',
+  `change_reason` text DEFAULT NULL COMMENT '변경 사유',
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  CONSTRAINT `rank_history_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1036 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+CREATE TABLE `nft_history` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `from_user_id` int(11) DEFAULT NULL COMMENT '송신자 ID',
+  `to_user_id` int(11) DEFAULT NULL COMMENT '수신자 ID',
+  `amount` int(11) NOT NULL COMMENT '거래 수량',
+  `transaction_date` datetime NOT NULL DEFAULT current_timestamp() COMMENT '거래 일자',
+  `transaction_type` varchar(50) NOT NULL COMMENT '거래 유형 (예: 구매, 선물)',
+  `order_id` int(11) DEFAULT NULL COMMENT '관련 주문 ID',
+  PRIMARY KEY (`id`),
+  KEY `from_user_id` (`from_user_id`),
+  KEY `to_user_id` (`to_user_id`),
+  CONSTRAINT `nft_history_ibfk_1` FOREIGN KEY (`from_user_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `nft_history_ibfk_2` FOREIGN KEY (`to_user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=22528 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+
+
+
+
+CREATE TABLE `commission_calculations` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `calculation_time` datetime NOT NULL,
+  `start_date` date NOT NULL,
+  `end_date` date NOT NULL,
+  `processed_orders` int(11) DEFAULT 0,
+  `failed_orders` int(11) DEFAULT 0,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=24 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
