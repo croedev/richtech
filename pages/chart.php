@@ -832,7 +832,7 @@ include __DIR__ . '/../includes/header.php';
                 .attr('class', 'id')
                 .attr('dy', -15)
                 .attr('text-anchor', 'middle')
-                .text(d => d.data.login_id)
+                .text(d => `${d.data.login_id} (${d.data.id})`)
                 .style('fill', d => d.data.id === highlightId ? '#ffffff' : '#333');
 
             nodes.append('text')
@@ -879,7 +879,7 @@ include __DIR__ . '/../includes/header.php';
 
                     let tooltipContent = `
                         <strong>${d.data.name}</strong><br/>
-                        ID: ${d.data.login_id}<br/>
+                        ID: ${d.data.login_id} (${d.data.id})<br/>
                         직급: ${d.data.rank}<br/>
                         실적: $${d.data.myAmount}
                     `;

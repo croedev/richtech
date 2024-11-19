@@ -287,6 +287,45 @@ include __DIR__ . '/../includes/header.php';
         background: rgba(231, 76, 60, 0.2);
         color: #e74c3c;
     }
+
+    .notice-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(212, 175, 55, 0.1);
+            border-radius: 8px;
+        }
+
+        .notice-title {
+            color: #d4af37;
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 1.0rem;
+        }
+
+        .notice-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            font-size: 0.8rem;
+            font-family: notosans;
+        }
+
+        .notice-list li {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.8rem;
+            margin-bottom: 5px;
+            padding-left: 15px;
+            position: relative;
+            font-weight: 200;
+        }
+
+        .notice-list li:before {
+            content: "•";
+            color: #d4af37;
+            position: absolute;
+            left: 0;
+        }
+
 </style>
 
 <div class="withdrawal-container">
@@ -295,8 +334,8 @@ include __DIR__ . '/../includes/header.php';
         <div class="flex justify-between items-center mb-4">
             <h2 class="fs-18 font-bold text-orange notosans">포인트 출금</h2>
             <span class="fs-14">
-                현재 포인트: <span class="btn14 bg-gray60 text-orange font-bold">
-                    <?php echo number_format($current_point, 4); ?> <small>USDP</small>
+                현재 포인트: <span class="btn14 bg-red60 notosans text-white font-bold">
+                    <?php echo number_format($current_point, 1); ?> <small>USDP</small>
                 </span>
             </span>
         </div>
@@ -307,7 +346,7 @@ include __DIR__ . '/../includes/header.php';
                 <label class="form-label">출금 신청 금액 (USDP)</label>
                 <input type="number" name="amount" id="amount" class="form-control" 
                        step="0.0001" min="50" required placeholder="최소 50 USDP">
-                <div class="fee-info text-green5 fs-12">* 최소 출금 금액: 50 USDP / 수수료: 3.00%</div>
+                <div class="fee-info mt10 text-green5 fs-12">* 최소 출금 금액: 50 USDP / 수수료: 3.00%</div>
             </div>
 
             <div class="form-group">
@@ -322,8 +361,8 @@ include __DIR__ . '/../includes/header.php';
     </div>
 
     <!-- 안내사항 섹션 -->
-    <div class="notice-section bg-gray80">
-        <div class="notice-title fs-14 notosans" onclick="toggleNotice()" style="cursor: pointer;">
+    <div class="notice-section bg-gray90">
+        <div class="notice-title notosans" onclick="toggleNotice()" style="cursor: pointer;">
             출금 안내사항 <span id="toggle-icon">▼</span>
         </div>
         <ul class="notice-list" id="notice-list" style="display: none;">
@@ -335,6 +374,7 @@ include __DIR__ . '/../includes/header.php';
             <li class="fs-12 notosans">정확한 BSC 주소 입력이 필요합니다.</li>
         </ul>
     </div>
+
 
     <!-- 출금 신청 내역 -->
     <div class="history-section mt60 mb100">
@@ -355,7 +395,7 @@ include __DIR__ . '/../includes/header.php';
                             <?php echo $withdrawal['formatted_created_at']; ?>
                         </span>
                         <span class="history-amount text-orange">
-                            <?php echo number_format($withdrawal['request_amount_usdp'], 4); ?> USDP
+                           - <?php echo number_format($withdrawal['request_amount_usdp'], 2); ?> USDP
                         </span>
                     </div>
                     <div class="history-body p-4">
@@ -363,13 +403,13 @@ include __DIR__ . '/../includes/header.php';
                             <div>
                                 <span class="text-gray-400">신청금액:</span>
                                 <span class="text-orange">
-                                    <?php echo number_format($withdrawal['request_amount_usdp'], 4); ?> USDP
+                                    <?php echo number_format($withdrawal['request_amount_usdp'], 2); ?> USDP
                                 </span>
                             </div>
                             <div>
                                 <span class="text-gray-400">수수료(3%):</span>
                                 <span class="text-orange">
-                                    <?php echo number_format($withdrawal['fee_amount'], 4); ?> USDP
+                                    <?php echo number_format($withdrawal['fee_amount'], 2); ?> USDP
                                 </span>
                             </div>
                             <div>
@@ -378,6 +418,25 @@ include __DIR__ . '/../includes/header.php';
                                     <?php echo number_format($withdrawal['actual_amount_usdt'], 6); ?> USDT
                                 </span>
                             </div>
+
+                              <div>
+                                <span class="text-gray-400">출금주소(BEP20)USDT :</span>
+                                <span class="text-orange">
+                                    <span id="address_<?php echo $withdrawal['id']; ?>"><?php echo $withdrawal['to_address']; ?></span>
+                                    <i class="fas fa-copy fs-12 ml-2 cursor-pointer" onclick="copyToClipboard('address_<?php echo $withdrawal['id']; ?>')" title="주소 복사"></i>
+                                </span>
+                                <script>
+                                function copyToClipboard(elementId) {
+                                    const text = document.getElementById(elementId).innerText;
+                                    navigator.clipboard.writeText(text).then(() => {
+                                        showNotification('주소가 복사되었습니다.', 'success');
+                                    }).catch(err => {
+                                        console.error('주소 복사 실패:', err);
+                                    });
+                                }
+                                </script>
+                            </div>
+
                             <div>
                                 <span class="text-gray-400">상태:</span>
                                 <span class="status-badge status-<?php echo $withdrawal['status']; ?>">
@@ -503,9 +562,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const fee = amount * 0.03;
             const actualAmount = amount - fee;
             feeInfo.innerHTML = `
-                <div class="fee-detail">
-                    <p class="text-gray-400">예상 수수료: ${fee.toFixed(4)} USDP</p>
-                    <p class="text-orange">실수령액: ${actualAmount.toFixed(4)} USDT</p>
+                <div class="fee-detail2 bg-gray90 px-20 pt10 pb5">
+                    <p class="text-gray4 fs-13 notosans">예상 수수료: <span class="badge bg-gray60 fs-14 text-orange">${fee.toFixed(4)}</span> <small>USDP</small>(3%)</p>
+                    <p class="text-orange mt10- notosans fs-15">실수령액: <span class="badge bg-gray60 fs-15 text-orange">${actualAmount.toFixed(4)}</span> <small>USDT</small></p>
                 </div>
             `;
         }

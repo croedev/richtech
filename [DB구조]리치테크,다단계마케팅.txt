@@ -46,7 +46,7 @@ CREATE TABLE `users` (
   KEY `fk_users_sponsored_by` (`sponsored_by`),
   CONSTRAINT `fk_users_referred_by` FOREIGN KEY (`referred_by`) REFERENCES `users` (`id`),
   CONSTRAINT `fk_users_sponsored_by` FOREIGN KEY (`sponsored_by`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+) ENGINE=InnoDB AUTO_INCREMENT=19 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 
 
 
@@ -81,8 +81,7 @@ CREATE TABLE `orders` (
   KEY `user_id` (`user_id`),
   KEY `product_id` (`product_id`),
   CONSTRAINT `fk_orders_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 
 
 
@@ -166,6 +165,7 @@ CREATE TABLE `token_history` (
 
 
 //추천보너스
+
 CREATE TABLE `bonus_referral` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `user_id` int(11) NOT NULL,
@@ -184,7 +184,7 @@ CREATE TABLE `bonus_referral` (
   CONSTRAINT `fk_bonus_referral_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`),
   CONSTRAINT `fk_bonus_referral_source_user` FOREIGN KEY (`source_user_id`) REFERENCES `users` (`id`),
   CONSTRAINT `fk_bonus_referral_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='추천수당 내역'
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='추천수당 내역'
 
 
 

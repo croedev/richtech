@@ -13,7 +13,7 @@ require_once __DIR__ . '/../includes/config.php';
 
 // 로그인 체크 
 if (!isset($_SESSION['user_id'])) {
-   header("Location: login?redirect=deposits_new");
+   header("Location: login?redirect=deposits");
    exit();
 }
 

@@ -2,194 +2,345 @@
 // functions_bonus.php
 
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
 ini_set('log_errors', 1);
-ini_set('error_log', '/home/lidyahkc/dir/richtech.club/pages/error.log');
+ini_set('error_log', '/home/lidyahkc/dir/richtech.club/pages/error_bonus.log');
 
 require_once __DIR__ . '/../includes/config.php';
 
 
-// 추천수당 계산 함수
+
+// 1.추천수당 계산 함수(500usd 이상 실적 기준)
+//추천수당-중복계산방지
 function calculate_referral_bonus($order_id, $conn) {
-    // 주문 정보 가져오기 (created_at 추가)
-    $stmt = $conn->prepare("SELECT user_id, total_amount, created_at FROM orders WHERE id = ?");
-    $stmt->bind_param("i", $order_id);
-    $stmt->execute();
-    $order = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $source_user_id = $order['user_id'];
-    $source_amount = $order['total_amount'];
-    $order_date = $order['created_at']; // 주문일자 저장
-
-    $current_user_id = $source_user_id;
-    $level = 1;
-    $max_level = 5;
-    $commission_rates = [1 => 10, 2 => 3, 3 => 2, 4 => 2, 5 => 2]; // 단계별 수수료 비율
-
-    while ($level <= $max_level) {
-        // 추천인 가져오기
-        $stmt = $conn->prepare("SELECT referred_by FROM users WHERE id = ?");
-        $stmt->bind_param("i", $current_user_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $stmt->close();
-
-        if ($result->num_rows == 0) {
-            break; // 더 이상 추천인이 없음
-        }
-
-        $user = $result->fetch_assoc();
-        $referred_by = $user['referred_by'];
-
-        if (is_null($referred_by)) {
-            break; // 추천인이 없음
-        }
-
-        // 수당 계산
-        $commission_rate = $commission_rates[$level];
-        $amount = $source_amount * ($commission_rate / 100);
-
-        // 수당 지급 내역 저장 (order_date 컬럼 추가)
-        $stmt = $conn->prepare("INSERT INTO bonus_referral (user_id, order_id, source_user_id, source_amount, level, commission_rate, amount, order_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("iiiidids", $referred_by, $order_id, $source_user_id, $source_amount, $level, $commission_rate, $amount, $order_date);
-        $stmt->execute();
-        $stmt->close();
-
-        // 회원의 추천수당 및 포인트 업데이트
-        $stmt = $conn->prepare("UPDATE users SET bonus_referral = bonus_referral + ?, point = point + ? WHERE id = ?");
-        $stmt->bind_param("ddi", $amount, $amount, $referred_by);
-        $stmt->execute();
-        $stmt->close();
-
-        // 다음 레벨로 이동
-        $current_user_id = $referred_by;
-        $level++;
-    }
-
-    // 수당 지급 완료 후 주문의 paid_referral 업데이트
-    $stmt = $conn->prepare("UPDATE orders SET paid_referral = 'completed' WHERE id = ?");
-    $stmt->bind_param("i", $order_id);
-    $stmt->execute();
-    $stmt->close();
-}
-
-
-
-// 직급수당 계산 함수 (수정)
-function calculate_rank_bonus($conn, $date) {
-    $conn->begin_transaction();
-
     try {
-        // 1. 회사 전체 매출 집계
-        $start_time = $date . ' 00:00:00';
-        $end_time = $date . ' 23:59:59';
+        // 트랜잭션 시작
+        $conn->begin_transaction();
 
+        // 1. 주문 검증
         $stmt = $conn->prepare("
-            SELECT COALESCE(SUM(total_amount), 0) as total_sales
-            FROM orders
-            WHERE created_at BETWEEN ? AND ?
-            AND status = 'completed'
-            AND paid_status = 'pending'
+            SELECT o.user_id, o.total_amount, o.paid_referral, o.status 
+            FROM orders o 
+            WHERE o.id = ? 
+            FOR UPDATE
         ");
-        $stmt->bind_param("ss", $start_time, $end_time);
+        $stmt->bind_param("i", $order_id);
         $stmt->execute();
-        $total_sales = $stmt->get_result()->fetch_assoc()['total_sales'];
+        $order = $stmt->get_result()->fetch_assoc();
         $stmt->close();
 
-        if ($total_sales <= 0) {
-            throw new Exception("해당 일자의 매출이 없습니다: $date");
+        if (!$order) {
+            throw new Exception("주문을 찾을 수 없습니다.");
         }
 
-        // 2. 각 직급별 수당 풀 계산 및 지급
-        $commission_rates = [
-            '1스타' => 9,
-            '2스타' => 4,
-            '3스타' => 3,
-            '4스타' => 3,
-            '5스타' => 2,
-            '6스타' => 1.5,
-            '7스타' => 1.5
-        ];
+        if ($order['status'] !== 'completed') {
+            throw new Exception("완료되지 않은 주문입니다.");
+        }
 
-        foreach ($commission_rates as $rank => $rate) {
-            // 해당 직급의 수당 대상 직급 구하기
-            $eligible_ranks = get_eligible_ranks($rank); // 수당 대상 직급 (applicable_ranks)
+        if ($order['paid_referral'] === 'completed') {
+            $conn->commit();
+            return true; // 이미 처리된 주문은 성공으로 처리
+        }
 
-            // 대상 회원 목록 조회
-            $members = get_rank_members($conn, $eligible_ranks); // 수당 대상 회원
+        $source_user_id = $order['user_id'];
+        $source_amount = $order['total_amount'];
+        $current_user_id = $source_user_id;
+        $level = 1;
+        $max_level = 5;
+        $commission_rates = [1 => 10, 2 => 3, 3 => 2, 4 => 2, 5 => 2];
 
-            $total_rank_members = count($members); // 대상 회원 수
+        while ($level <= $max_level) {
+            // 추천인 정보 조회
+            $stmt = $conn->prepare("
+                SELECT id, referred_by, myAmount 
+                FROM users 
+                WHERE id = ?
+            ");
+            $stmt->bind_param("i", $current_user_id);
+            $stmt->execute();
+            $user = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
 
-            if ($total_rank_members == 0) {
-                continue; // 대상자가 없으면 다음으로
+            if (!$user || !$user['referred_by']) {
+                break;
             }
 
-            // 수당 풀 계산
-            $bonus_pool = $total_sales * ($rate / 100);
-            $amount_per_member = $bonus_pool / $total_rank_members;
+            $referred_by = $user['referred_by'];
 
-            // applicable_ranks를 문자열로 변환 (예: '2스타,3스타')
-            $applicable_ranks_str = implode(',', $eligible_ranks);
+            // 추천인의 실적 확인
+            $stmt = $conn->prepare("
+                SELECT id, name, login_id, myAmount 
+                FROM users 
+                WHERE id = ?
+            ");
+            $stmt->bind_param("i", $referred_by);
+            $stmt->execute();
+            $referrer = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
 
-            // 각 회원별 수당 지급
-            foreach ($members as $member) {
-                // 수당 지급 내역 저장
-                $stmt_insert = $conn->prepare("
-                    INSERT INTO bonus_rank (
-                        user_id, rank, bonus_type, total_company_sales, commission_rate, amount, 
-                        applicable_ranks, total_rank_members, calculation_date, created_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-                ");
-                $bonus_type = $rank . '수당';
-                $stmt_insert->bind_param(
-                    "issdidsis",
-                    $member['id'],
-                    $rank,
-                    $bonus_type,
-                    $total_sales,
-                    $rate,
-                    $amount_per_member,
-                    $applicable_ranks_str,
-                    $total_rank_members,
-                    $date
-                );
-                $stmt_insert->execute();
-                $stmt_insert->close();
+            // 수당 계산
+            $commission_rate = ($referrer['myAmount'] >= 500) ? $commission_rates[$level] : 0;
+            $amount = round($source_amount * ($commission_rate / 100), 2); // 소수점 2자리까지
 
-                // 회원의 직급수당 및 포인트 업데이트
-                $stmt_update = $conn->prepare("
-                    UPDATE users
-                    SET bonus_rank = bonus_rank + ?, point = point + ?
+            // 수당 내역 저장
+            $stmt = $conn->prepare("
+                INSERT INTO bonus_referral (
+                    user_id, 
+                    order_id, 
+                    source_user_id, 
+                    source_amount, 
+                    level, 
+                    commission_rate, 
+                    amount,
+                    order_date,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+            ");
+
+            $stmt->bind_param(
+                "iiiiddd", 
+                $referred_by,
+                $order_id,
+                $source_user_id,
+                $source_amount,
+                $level,
+                $commission_rate,
+                $amount
+            );
+
+            if (!$stmt->execute()) {
+                throw new Exception("수당 내역 저장 실패");
+            }
+            $stmt->close();
+
+            // 실제 수당 지급 (myAmount 500 이상)
+            if ($referrer['myAmount'] >= 500) {
+                $stmt = $conn->prepare("
+                    UPDATE users 
+                    SET bonus_referral = bonus_referral + ?,
+                        point = point + ?,
+                        commission_total = commission_total + ?
                     WHERE id = ?
                 ");
-                $stmt_update->bind_param("ddi", $amount_per_member, $amount_per_member, $member['id']);
-                $stmt_update->execute();
-                $stmt_update->close();
+                
+                $stmt->bind_param("dddi", $amount, $amount, $amount, $referred_by);
+                if (!$stmt->execute()) {
+                    throw new Exception("수당 지급 실패");
+                }
+                $stmt->close();
             }
+
+            // 다음 레벨 처리
+            $current_user_id = $referred_by;
+            $level++;
         }
 
-        // 수당 지급 완료 후 주문의 paid_status 업데이트
-        $stmt = $conn->prepare("
-            UPDATE orders
-            SET paid_status = 'completed'
-            WHERE created_at BETWEEN ? AND ?
-            AND status = 'completed'
-            AND paid_status = 'pending'
-        ");
-        $stmt->bind_param("ss", $start_time, $end_time);
-        $stmt->execute();
+        // 주문 상태 업데이트
+        $stmt = $conn->prepare("UPDATE orders SET paid_referral = 'completed' WHERE id = ?");
+        $stmt->bind_param("i", $order_id);
+        if (!$stmt->execute()) {
+            throw new Exception("주문 상태 업데이트 실패");
+        }
         $stmt->close();
 
+        // 트랜잭션 커밋
         $conn->commit();
+        return true;
 
     } catch (Exception $e) {
-        $conn->rollback();
-        error_log("직급수당 계산 오류 ($date): " . $e->getMessage());
+        // 오류 발생 시 롤백
+        if ($conn->inTransaction()) {
+            $conn->rollback();
+        }
+        error_log("추천수당 계산 오류 (주문 ID: $order_id): " . $e->getMessage());
         throw $e;
     }
 }
+
+
+// 2.직급수당 계산 함수 (2024.11.18수정)
+function calculate_rank_bonus($conn, $date) {
+    $transaction_started = false;
+    
+    try {
+        // 이미 처리된 날짜 확인
+        $stmt = $conn->prepare("SELECT COUNT(*) as count FROM bonus_rank WHERE calculation_date = ?");
+        $stmt->bind_param("s", $date);
+        $stmt->execute();
+        $already_processed = $stmt->get_result()->fetch_assoc()['count'] > 0;
+        $stmt->close();
+
+        if ($already_processed) {
+            throw new Exception("이미 처리된 날짜입니다: $date");
+        }
+
+        $conn->begin_transaction();
+        $transaction_started = true;
+
+       // 2. 매출 집계
+       $start_time = $date . ' 00:00:00';
+       $end_time = $date . ' 23:59:59';
+
+       $stmt = $conn->prepare("
+           SELECT COALESCE(SUM(total_amount), 0) as total_sales
+           FROM orders
+           WHERE created_at BETWEEN ? AND ?
+           AND status = 'completed'
+           AND paid_status = 'pending'
+           FOR UPDATE
+       ");
+       $stmt->bind_param("ss", $start_time, $end_time);
+       $stmt->execute();
+       $total_sales = $stmt->get_result()->fetch_assoc()['total_sales'];
+       $stmt->close();
+
+       if ($total_sales <= 0) {
+           throw new Exception("해당 일자의 매출이 없습니다: $date");
+       }
+
+       error_log("매출 집계 완료: $total_sales");
+
+       // 3. 직급별 수당 계산
+       $commission_rates = [
+           '1스타' => 9.00,
+           '2스타' => 4.00, 
+           '3스타' => 3.00,
+           '4스타' => 3.00,
+           '5스타' => 2.00,
+           '6스타' => 1.50,
+           '7스타' => 1.50
+       ];
+
+       foreach ($commission_rates as $rank => $rate) {
+           error_log("직급 $rank 처리 시작");
+           
+           // 4. 수당 대상 직급 구하기
+           $eligible_ranks = get_eligible_ranks($rank);
+           if (empty($eligible_ranks)) continue;
+
+           $placeholders = str_repeat('?,', count($eligible_ranks) - 1) . '?';
+           
+           // 5. 대상 회원 조회
+           $sql = "
+               SELECT id, login_id, name, rank 
+               FROM users 
+               WHERE rank IN ($placeholders)
+               AND status = 'active'
+               FOR UPDATE
+           ";
+           
+           $stmt = $conn->prepare($sql);
+           $types = str_repeat('s', count($eligible_ranks));
+           $stmt->bind_param($types, ...$eligible_ranks);
+           $stmt->execute();
+           $members = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+           $stmt->close();
+
+           $total_members = count($members);
+           if ($total_members == 0) {
+               error_log("$rank 직급 대상 회원 없음");
+               continue;
+           }
+
+           // 6. 수당 계산
+           $bonus_pool = round($total_sales * ($rate / 100), 2);
+           $amount_per_member = round($bonus_pool / $total_members, 2);
+           $applicable_ranks_str = implode(',', $eligible_ranks);
+
+           error_log("$rank - 수당풀: $bonus_pool, 1인당: $amount_per_member, 대상자: $total_members명");
+
+           // 7. 회원별 수당 지급
+           foreach ($members as $member) {
+               // 수당 내역 저장
+               $stmt = $conn->prepare("
+                   INSERT INTO bonus_rank (
+                       user_id, rank, bonus_type, total_company_sales,
+                       commission_rate, amount, applicable_ranks,
+                       total_rank_members, calculation_date, created_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+               ");
+
+               $bonus_type = $rank . '수당';
+               $calculation_date = date('Y-m-d', strtotime($date));
+
+               if (!$stmt->bind_param(
+                "issdidsss",  // date를 적절한 형식의 string으로 처리
+                $member['id'],
+                $rank,
+                $bonus_type, 
+                $total_sales,
+                $rate,
+                $amount_per_member,
+                $applicable_ranks_str,
+                $total_members,
+                $calculation_date
+               )) {
+                   throw new Exception("바인딩 실패: " . $stmt->error);
+               }
+
+               if (!$stmt->execute()) {
+                   throw new Exception("수당내역 저장 실패: " . $stmt->error);
+               }
+               $stmt->close();
+
+               // 8. 회원 수당/포인트 업데이트
+               $stmt = $conn->prepare("
+                   UPDATE users 
+                   SET bonus_rank = bonus_rank + ?,
+                       point = point + ?,
+                       commission_total = commission_total + ?
+                   WHERE id = ?
+                   AND status = 'active'
+               ");
+
+               if (!$stmt->bind_param("dddi",
+                   $amount_per_member,
+                   $amount_per_member,
+                   $amount_per_member,
+                   $member['id']
+               )) {
+                   throw new Exception("회원 업데이트 바인딩 실패");
+               }
+
+               if (!$stmt->execute() || $stmt->affected_rows == 0) {
+                   throw new Exception("회원 수당 업데이트 실패");
+               }
+               $stmt->close();
+
+               error_log("회원 {$member['login_id']} 수당 지급 완료: $amount_per_member");
+           }
+       }
+
+       // 9. 주문 상태 업데이트
+       $stmt = $conn->prepare("
+           UPDATE orders 
+           SET paid_status = 'completed'
+           WHERE created_at BETWEEN ? AND ?
+           AND status = 'completed'
+           AND paid_status = 'pending'
+       ");
+
+       $stmt->bind_param("ss", $start_time, $end_time);
+       if (!$stmt->execute()) {
+           throw new Exception("주문상태 업데이트 실패");
+       }
+       $stmt->close();
+
+      
+        $conn->commit();
+        $transaction_started = false;
+        error_log("$date 직급수당 정산 완료");
+        return true;
+
+    } catch (Exception $e) {
+        if ($transaction_started) {
+            $conn->rollback();
+        }
+        error_log("직급수당 계산 오류 ($date): " . $e->getMessage());
+        throw $e;
+   }
+}
+
 
 // 수당 대상 직급 구하기 함수
 function get_eligible_ranks($rank) {
@@ -231,92 +382,185 @@ function get_rank_members($conn, $ranks) {
     return $members;
 }
 
-// 센터수당 계산 함수 (수정됨)
-function calculate_center_bonus($conn, $date) {
-    $conn->begin_transaction();
 
+   
+//3.센터수당 수정 (users테이블저장수정, 2024-11-18)
+function calculate_center_bonus($conn, $date) {
     try {
-        // 활성 센터 목록 조회 및 센터장 정보 가져오기
+        if (!validateDate($date)) {
+            throw new Exception("Invalid date format: $date");
+        }
+
+        $conn->begin_transaction();
+
+        // 1. 활성 센터 목록 조회
         $stmt = $conn->prepare("
-            SELECT o.id as organization_id, o.name as center_name, o.user_id as center_user_id
+            SELECT 
+                o.id as organization_id,
+                o.name as center_name,
+                o.user_id as center_user_id,
+                u.bonus_center as current_bonus,
+                u.point as current_point,
+                u.commission_total as current_commission
             FROM organizations o
+            JOIN users u ON o.user_id = u.id
             WHERE o.user_id IS NOT NULL
         ");
-        $stmt->execute();
+        
+        if (!$stmt->execute()) {
+            throw new Exception("Failed to fetch centers: " . $stmt->error);
+        }
+        
         $centers = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
 
         if (empty($centers)) {
-            throw new Exception("활성 센터가 없습니다.");
+            throw new Exception("No active centers found");
         }
 
+        // 2. 각 센터별로 처리
         foreach ($centers as $center) {
-            $organization_id = $center['organization_id'];
-            $center_name = $center['center_name'];
-            $center_user_id = $center['center_user_id'];
-
-            // 센터별 매출 집계
             $start_time = $date . ' 00:00:00';
             $end_time = $date . ' 23:59:59';
 
+            // 이미 처리된 주문이 있는지 확인
+            $stmt = $conn->prepare("
+                SELECT COUNT(*) as processed_count
+                FROM orders o
+                JOIN users u ON o.user_id = u.id
+                WHERE u.organization = ?
+                AND o.created_at BETWEEN ? AND ?
+                AND o.status = 'completed'
+                AND o.paid_center = 'completed'
+            ");
+            $stmt->bind_param("sss", $center['center_name'], $start_time, $end_time);
+            $stmt->execute();
+            $processed = $stmt->get_result()->fetch_assoc()['processed_count'] > 0;
+            $stmt->close();
+
+            if ($processed) {
+                continue; // 이미 처리된 센터는 건너뜀
+            }
+
+            // 3. 센터별 매출 집계
             $stmt = $conn->prepare("
                 SELECT COALESCE(SUM(o.total_amount), 0) as total_sales
                 FROM orders o
                 JOIN users u ON o.user_id = u.id
-                WHERE u.organization = ? AND o.created_at BETWEEN ? AND ? AND o.status = 'completed' AND o.paid_center = 'pending'
+                WHERE u.organization = ?
+                AND o.created_at BETWEEN ? AND ?
+                AND o.status = 'completed'
+                AND o.paid_center = 'pending'
             ");
-            $stmt->bind_param("sss", $center_name, $start_time, $end_time);
-            $stmt->execute();
+            $stmt->bind_param("sss", $center['center_name'], $start_time, $end_time);
+            
+            if (!$stmt->execute()) {
+                throw new Exception("Failed to calculate sales for center " . $center['center_name']);
+            }
+            
             $total_sales = $stmt->get_result()->fetch_assoc()['total_sales'];
             $stmt->close();
 
             if ($total_sales <= 0) {
-                continue; // 매출이 없으면 다음 센터로
+                continue;
             }
 
-            // 센터 수당 계산 (2%)
-            $commission_rate = 2;
-            $amount = $total_sales * ($commission_rate / 100);
+            // 4. 수당 계산
+            $commission_rate = 2.00;
+            $amount = round($total_sales * ($commission_rate / 100), 2);
 
-            // 수당 지급 내역 저장
+            // 5. bonus_center 테이블에 기록
             $stmt = $conn->prepare("
-                INSERT INTO bonus_center (organization_id, user_id, total_sales, commission_rate, amount, sales_date)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO bonus_center (
+                    organization_id,
+                    user_id,
+                    total_sales,
+                    commission_rate,
+                    amount,
+                    sales_date
+                ) VALUES (?, ?, ?, ?, ?, ?)
             ");
-            $stmt->bind_param("iiddds", $organization_id, $center_user_id, $total_sales, $commission_rate, $amount, $date);
-            $stmt->execute();
+
+            if (!$stmt->bind_param("iiddds", 
+                $center['organization_id'],
+                $center['center_user_id'],
+                $total_sales,
+                $commission_rate,
+                $amount,
+                $date
+            )) {
+                throw new Exception("Failed to bind params for bonus_center insert");
+            }
+
+            if (!$stmt->execute()) {
+                throw new Exception("Failed to insert bonus record");
+            }
             $stmt->close();
 
-            // 센터장의 센터수당 및 포인트 업데이트
+            // 6. users 테이블 업데이트
             $stmt = $conn->prepare("
                 UPDATE users
-                SET bonus_center = bonus_center + ?, point = point + ?
+                SET 
+                    bonus_center = bonus_center + ?,
+                    point = point + ?,
+                    commission_total = commission_total + ?
                 WHERE id = ?
             ");
-            $stmt->bind_param("ddi", $amount, $amount, $center_user_id);
-            $stmt->execute();
+
+            $stmt->bind_param("dddi", 
+                $amount,
+                $amount,
+                $amount,
+                $center['center_user_id']
+            );
+
+            if (!$stmt->execute()) {
+                throw new Exception("Failed to update user bonuses");
+            }
             $stmt->close();
 
-            // 수당 지급 완료 후 주문의 paid_center 업데이트
+            // 7. orders 상태 업데이트
             $stmt = $conn->prepare("
                 UPDATE orders o
                 JOIN users u ON o.user_id = u.id
                 SET o.paid_center = 'completed'
-                WHERE u.organization = ? AND o.created_at BETWEEN ? AND ? AND o.status = 'completed' AND o.paid_center = 'pending'
+                WHERE u.organization = ?
+                AND o.created_at BETWEEN ? AND ?
+                AND o.status = 'completed'
+                AND o.paid_center = 'pending'
             ");
-            $stmt->bind_param("sss", $center_name, $start_time, $end_time);
-            $stmt->execute();
+
+            $stmt->bind_param("sss", 
+                $center['center_name'],
+                $start_time,
+                $end_time
+            );
+
+            if (!$stmt->execute()) {
+                throw new Exception("Failed to update order status");
+            }
             $stmt->close();
         }
 
         $conn->commit();
+        return true;
 
     } catch (Exception $e) {
-        $conn->rollback();
-        error_log("센터수당 계산 오류 ($date): " . $e->getMessage());
+        if ($conn->inTransaction()) {
+            $conn->rollback();
+        }
+        error_log("Center bonus calculation error: " . $e->getMessage());
         throw $e;
     }
 }
+
+function validateDate($date) {
+    $d = DateTime::createFromFormat('Y-m-d', $date);
+    return $d && $d->format('Y-m-d') === $date;
+}
+
+
+
 
 // 회원들의 실적 업데이트 및 직급 승급 계산 함수
 function update_user_performance_and_rank($conn) {
@@ -551,136 +795,179 @@ function find_promotion_date($conn, $user_id, $requirements) {
 
 
 
-
 // 회사 일일 통계 저장 함수
 function save_company_state($conn, $date) {
-    // 필요한 통계 데이터 계산
+   $transaction_started = false;
+   
+   try {
+       // 이미 처리된 날짜인지 검증
+       $stmt = $conn->prepare("SELECT COUNT(*) as count FROM company_state WHERE date = ?");
+       $stmt->bind_param("s", $date);
+       $stmt->execute();
+       $already_processed = $stmt->get_result()->fetch_assoc()['count'] > 0;
+       $stmt->close();
 
-    // 1. 신규 가입 회원 수
-    $stmt = $conn->prepare("SELECT COUNT(*) as new_members FROM users WHERE DATE(created_at) = ?");
-    $stmt->bind_param("s", $date);
-    $stmt->execute();
-    $new_members = $stmt->get_result()->fetch_assoc()['new_members'];
-    $stmt->close();
+       if ($already_processed) {
+           error_log("이미 처리된 날짜: $date");
+           return false;
+       }
 
-    // 2. 회사 매출 (당일 주문 합계)
-    $stmt = $conn->prepare("SELECT SUM(total_amount) as company_sales FROM orders WHERE DATE(created_at) = ? AND status = 'completed'");
-    $stmt->bind_param("s", $date);
-    $stmt->execute();
-    $company_sales = $stmt->get_result()->fetch_assoc()['company_sales'];
-    $stmt->close();
-    $company_sales = $company_sales ?: 0;
+       // 날짜 형식 검증
+       $calculation_date = date('Y-m-d', strtotime($date));
+       if (!$calculation_date || $calculation_date === '1970-01-01') {
+           throw new Exception("잘못된 날짜 형식: $date");
+       }
 
-    // 3. 회사 입금 금액 (당일 입금 합계)
-    $stmt = $conn->prepare("SELECT SUM(amount_usdt) as company_deposits FROM deposits WHERE DATE(created_at) = ? AND status = 'completed'");
-    $stmt->bind_param("s", $date);
-    $stmt->execute();
-    $company_deposits = $stmt->get_result()->fetch_assoc()['company_deposits'];
-    $stmt->close();
-    $company_deposits = $company_deposits ?: 0;
+       // 트랜잭션 시작
+       $conn->begin_transaction();
+       $transaction_started = true;
 
-    // 4. 회사 출금 금액 (당일 출금 합계)
-    $stmt = $conn->prepare("SELECT SUM(actual_amount_usdt) as company_withdrawals FROM withdrawals WHERE DATE(processed_at) = ? AND status = 'completed'");
-    $stmt->bind_param("s", $date);
-    $stmt->execute();
-    $company_withdrawals = $stmt->get_result()->fetch_assoc()['company_withdrawals'];
-    $stmt->close();
-    $company_withdrawals = $company_withdrawals ?: 0;
+       // 1. 신규 가입 회원 수
+       $stmt = $conn->prepare("SELECT COUNT(*) as new_members FROM users WHERE DATE(created_at) = ?");
+       $stmt->bind_param("s", $calculation_date);
+       $stmt->execute();
+       $new_members = $stmt->get_result()->fetch_assoc()['new_members'];
+       $stmt->close();
 
-    // 5. 추천수당 지급 합계
-    $stmt = $conn->prepare("SELECT SUM(amount) as bonus_referral FROM bonus_referral WHERE DATE(created_at) = ?");
-    $stmt->bind_param("s", $date);
-    $stmt->execute();
-    $bonus_referral = $stmt->get_result()->fetch_assoc()['bonus_referral'];
-    $stmt->close();
-    $bonus_referral = $bonus_referral ?: 0;
+       // 2. 회사 매출
+       $stmt = $conn->prepare("SELECT SUM(total_amount) as company_sales FROM orders WHERE DATE(created_at) = ? AND status = 'completed'");
+       $stmt->bind_param("s", $calculation_date);
+       $stmt->execute();
+       $company_sales = $stmt->get_result()->fetch_assoc()['company_sales'];
+       $stmt->close();
+       $company_sales = $company_sales ?: 0;
 
-    // 6. 직급수당 지급 합계
-    $stmt = $conn->prepare("SELECT SUM(amount) as bonus_rank FROM bonus_rank WHERE calculation_date = ?");
-    $stmt->bind_param("s", $date);
-    $stmt->execute();
-    $bonus_rank = $stmt->get_result()->fetch_assoc()['bonus_rank'];
-    $stmt->close();
-    $bonus_rank = $bonus_rank ?: 0;
+       // 3. 회사 입금액 
+       $stmt = $conn->prepare("SELECT SUM(amount_usdt) as company_deposits FROM deposits WHERE DATE(created_at) = ? AND status = 'completed'");
+       $stmt->bind_param("s", $calculation_date);
+       $stmt->execute();
+       $company_deposits = $stmt->get_result()->fetch_assoc()['company_deposits'];
+       $stmt->close();
+       $company_deposits = $company_deposits ?: 0;
 
-    // 7. 센터수당 지급 합계
-    $stmt = $conn->prepare("SELECT SUM(amount) as bonus_center FROM bonus_center WHERE sales_date = ?");
-    $stmt->bind_param("s", $date);
-    $stmt->execute();
-    $bonus_center = $stmt->get_result()->fetch_assoc()['bonus_center'];
-    $stmt->close();
-    $bonus_center = $bonus_center ?: 0;
+       // 4. 회사 출금액
+       $stmt = $conn->prepare("SELECT SUM(actual_amount_usdt) as company_withdrawals FROM withdrawals WHERE DATE(processed_at) = ? AND status = 'completed'");
+       $stmt->bind_param("s", $calculation_date);
+       $stmt->execute();
+       $company_withdrawals = $stmt->get_result()->fetch_assoc()['company_withdrawals'];
+       $stmt->close();
+       $company_withdrawals = $company_withdrawals ?: 0;
 
-    // 8. 회사 지급 주식 수 (당일 지급된 주식 수 합계)
-    $stmt = $conn->prepare("SELECT SUM(stock) as company_stock_paid FROM orders WHERE DATE(created_at) = ? AND status = 'completed'");
-    $stmt->bind_param("s", $date);
-    $stmt->execute();
-    $company_stock_paid = $stmt->get_result()->fetch_assoc()['company_stock_paid'];
-    $stmt->close();
-    $company_stock_paid = $company_stock_paid ?: 0;
+       // 5. 추천수당
+       $stmt = $conn->prepare("SELECT SUM(amount) as bonus_referral FROM bonus_referral WHERE DATE(created_at) = ?");
+       $stmt->bind_param("s", $calculation_date);
+       $stmt->execute();
+       $bonus_referral = $stmt->get_result()->fetch_assoc()['bonus_referral'];
+       $stmt->close();
+       $bonus_referral = $bonus_referral ?: 0;
 
-    // 9. 회사 지급 토큰 수 (당일 지급된 토큰 수 합계)
-    $stmt = $conn->prepare("SELECT SUM(token) as company_token_paid FROM orders WHERE DATE(created_at) = ? AND status = 'completed'");
-    $stmt->bind_param("s", $date);
-    $stmt->execute();
-    $company_token_paid = $stmt->get_result()->fetch_assoc()['company_token_paid'];
-    $stmt->close();
-    $company_token_paid = $company_token_paid ?: 0;
+       // 6. 직급수당
+       $stmt = $conn->prepare("SELECT SUM(amount) as bonus_rank FROM bonus_rank WHERE calculation_date = ?");
+       $stmt->bind_param("s", $calculation_date);
+       $stmt->execute();
+       $bonus_rank = $stmt->get_result()->fetch_assoc()['bonus_rank'];
+       $stmt->close();
+       $bonus_rank = $bonus_rank ?: 0;
 
-    // 10. 각 직급별 회원 수
-    $ranks = ['1스타', '2스타', '3스타', '4스타', '5스타', '6스타', '7스타'];
-    $rank_counts = [];
-    foreach ($ranks as $rank) {
-        $stmt = $conn->prepare("SELECT COUNT(*) as count FROM users WHERE rank = ?");
-        $stmt->bind_param("s", $rank);
-        $stmt->execute();
-        $count = $stmt->get_result()->fetch_assoc()['count'];
-        $stmt->close();
-        $rank_counts[$rank] = $count ?: 0;
-    }
+       // 7. 센터수당
+       $stmt = $conn->prepare("SELECT SUM(amount) as bonus_center FROM bonus_center WHERE sales_date = ?");
+       $stmt->bind_param("s", $calculation_date);
+       $stmt->execute();
+       $bonus_center = $stmt->get_result()->fetch_assoc()['bonus_center'];
+       $stmt->close();
+       $bonus_center = $bonus_center ?: 0;
 
-    // 11. 센터 수
-    $stmt = $conn->prepare("SELECT COUNT(*) as total_centers FROM organizations");
-    $stmt->execute();
-    $total_centers = $stmt->get_result()->fetch_assoc()['total_centers'];
-    $stmt->close();
+       // 8. 지급 주식수
+       $stmt = $conn->prepare("SELECT SUM(stock) as company_stock_paid FROM orders WHERE DATE(created_at) = ? AND status = 'completed'");
+       $stmt->bind_param("s", $calculation_date);
+       $stmt->execute();
+       $company_stock_paid = $stmt->get_result()->fetch_assoc()['company_stock_paid'];
+       $stmt->close();
+       $company_stock_paid = $company_stock_paid ?: 0;
 
-    // 12. 주식 계좌 및 마스터 계좌 잔액 계산
-    $stock_account = $company_sales * 0.37; // 37%를 주식계정으로
-    $master_account = $company_sales * 0.63; // 63%를 마스터계정으로
+       // 9. 지급 토큰 
+       $stmt = $conn->prepare("SELECT SUM(token) as company_token_paid FROM orders WHERE DATE(created_at) = ? AND status = 'completed'");
+       $stmt->bind_param("s", $calculation_date);
+       $stmt->execute();
+       $company_token_paid = $stmt->get_result()->fetch_assoc()['company_token_paid'];
+       $stmt->close();
+       $company_token_paid = $company_token_paid ?: 0;
 
-    // 회사 일일 통계 저장
-    $stmt = $conn->prepare("
-        INSERT INTO company_state (
-            date, new_members, company_sales, company_deposits, company_withdrawals,
-            bonus_referral, bonus_rank, bonus_center, company_stock_paid, company_token_paid,
-            rank_1star, rank_2star, rank_3star, rank_4star, rank_5star, rank_6star, rank_7star,
-            total_centers, stock_account, master_account
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ");
-   $stmt->bind_param(
-    "siddddddidiiiiiiiidd",
-    $date,
-    $new_members,
-    $company_sales,
-    $company_deposits,
-    $company_withdrawals,
-    $bonus_referral,
-    $bonus_rank,
-    $bonus_center,
-    $company_stock_paid,
-    $company_token_paid,
-    $rank_counts['1스타'],
-    $rank_counts['2스타'],
-    $rank_counts['3스타'],
-    $rank_counts['4스타'],
-    $rank_counts['5스타'],
-    $rank_counts['6스타'],
-    $rank_counts['7스타'],
-    $total_centers,
-    $stock_account,
-    $master_account
-);
-    $stmt->execute();
-    $stmt->close();
+       // 10. 직급별 회원수
+       $ranks = ['1스타', '2스타', '3스타', '4스타', '5스타', '6스타', '7스타'];
+       $rank_counts = [];
+       foreach ($ranks as $rank) {
+           $stmt = $conn->prepare("SELECT COUNT(*) as count FROM users WHERE rank = ?");
+           $stmt->bind_param("s", $rank);
+           $stmt->execute();
+           $count = $stmt->get_result()->fetch_assoc()['count'];
+           $stmt->close();
+           $rank_counts[$rank] = $count ?: 0;
+       }
+
+       // 11. 센터수
+       $stmt = $conn->prepare("SELECT COUNT(*) as total_centers FROM organizations");
+       $stmt->execute();
+       $total_centers = $stmt->get_result()->fetch_assoc()['total_centers'];
+       $stmt->close();
+
+       // 12. 주식/마스터계좌
+       $stock_account = $company_sales * 0.37;
+       $master_account = $company_sales * 0.63;
+
+       // 데이터 저장
+       $stmt = $conn->prepare("
+           INSERT INTO company_state (
+               date, new_members, company_sales, company_deposits, company_withdrawals,
+               bonus_referral, bonus_rank, bonus_center, company_stock_paid, company_token_paid,
+               rank_1star, rank_2star, rank_3star, rank_4star, rank_5star, rank_6star, rank_7star,
+               total_centers, stock_account, master_account
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ");
+
+       if (!$stmt->bind_param(
+           "siddddddidiiiiiiiidd",
+           $calculation_date,
+           $new_members,
+           $company_sales,
+           $company_deposits,
+           $company_withdrawals,
+           $bonus_referral,
+           $bonus_rank,
+           $bonus_center,
+           $company_stock_paid,
+           $company_token_paid,
+           $rank_counts['1스타'],
+           $rank_counts['2스타'],
+           $rank_counts['3스타'],
+           $rank_counts['4스타'],
+           $rank_counts['5스타'],
+           $rank_counts['6스타'],
+           $rank_counts['7스타'],
+           $total_centers,
+           $stock_account,
+           $master_account
+       )) {
+           throw new Exception("바인딩 실패: " . $stmt->error);
+       }
+
+       if (!$stmt->execute()) {
+           throw new Exception("회사통계 저장 실패: " . $stmt->error);
+       }
+
+       $stmt->close();
+       
+       $conn->commit();
+       $transaction_started = false;
+       
+       error_log("회사 통계 저장 완료: $calculation_date");
+       return true;
+
+   } catch (Exception $e) {
+       if ($transaction_started) {
+           $conn->rollback();
+       }
+       error_log("회사 통계 저장 오류 ($date): " . $e->getMessage());
+       throw $e;
+   }
 }

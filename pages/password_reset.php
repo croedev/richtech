@@ -2,7 +2,7 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 ini_set('log_errors', 1);
-ini_set('error_log', '/home/yconpay.com/b2b/yammi.farm/pages/error.log');
+ini_set('error_log', '/home/lidyahkc/dir/richtech.club/pages/error.log');
 ?>
 
 <?php

@@ -463,18 +463,18 @@ $recent_notices = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 <div class="mx-20 mt20 mb30 ">
     <div class="">
-        <button class="btn-outline text-orange" onclick="location.href='/join'"><i class="fas fa-list"></i> 부자되기 가입</button>
-                 <button class="btn-outline text-orange" onclick="location.href='/profile'"><i class="fas fa-list"></i> 나의정보</button>
-          <button class="btn-outline text-orange" onclick="location.href='/order'"><i class="fas fa-list"></i> 구매하기</button>
-                   <button class="btn-outline text-orange" onclick="location.href='/order_list'"><i class="fas fa-list"></i> 구매내역보기</button>
-                  <button class="btn-outline text-orange" onclick="location.href='/deposits'"><i class="fas fa-list"></i> 충전하기</button>
-                           <button class="btn-outline text-orange" onclick="location.href='/bonus'"><i class="fas fa-list"></i> 수수료보기</button>
-                  <button class="btn-outline text-orange" onclick="location.href='/withdrawals'"><i class="fas fa-list"></i> 출금하기</button>
-         <button class="btn-outline text-orange" onclick="location.href='/chart'"><i class="fas fa-list"></i> 조직도보기</button>
-           <button class="btn-outline text-orange" onclick="location.href='/certificate'"><i class="fas fa-list"></i> 주주인증서</button>
+        <button class="btn-outline text-orange" onclick="location.href='/join'"><i class="fas fa-user-plus"></i> 부자되기 가입</button>
+                 <button class="btn-outline text-orange" onclick="location.href='/profile'"><i class="fas fa-user"></i> 나의정보</button>
+          <button class="btn-outline text-orange" onclick="location.href='/order'"><i class="fas fa-shopping-cart"></i> 구매하기</button>
+                   <button class="btn-outline text-orange" onclick="location.href='/order_list'"><i class="fas fa-clipboard-list"></i> 구매내역보기</button>
+                  <button class="btn-outline text-orange" onclick="location.href='/deposits'"><i class="fas fa-wallet"></i> 충전하기</button>
+                           <button class="btn-outline text-orange" onclick="location.href='/bonus'"><i class="fas fa-coins"></i> 수수료보기</button>
+                  <button class="btn-outline text-orange" onclick="location.href='/withdrawals'"><i class="fas fa-money-bill-wave"></i> 출금하기</button>
+         <button class="btn-outline text-orange" onclick="location.href='/chart'"><i class="fas fa-sitemap"></i> 조직도보기</button>
+           <button class="btn-outline text-orange" onclick="location.href='/certificate'"><i class="fas fa-certificate"></i> 주주인증서</button>
 
            <?php if (isset($_SESSION['user_id']) && in_array($_SESSION['user_id'], [1, 2])): ?>
-               <button class="btn-outline bg-orange text-black" onclick="location.href='/admin/'"><i class="fas fa-list"></i> 관리자</button>
+               <button class="btn-outline bg-orange text-black" onclick="location.href='/admin/'"><i class="fas fa-cog"></i> 관리자</button>
            <?php endif; ?>
     </div>
 </div>
