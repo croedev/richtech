@@ -81,7 +81,7 @@
                                           <li class="nav-item"><a class="nav-link" href="/admin/admin_deposits.php">디파짓 관리</a></li>
                     <li class="nav-item"><a class="nav-link" href="/admin/admin_orders.php">주문 관리</a></li>
                     <li class="nav-item"><a class="nav-link" href="/admin/admin_bonus.php">수수료 관리</a></li>
-                                    <li class="nav-item"><a class="nav-link" href="/chart">조직도</a></li>
+                                    <li class="nav-item"><a class="nav-link" href="/admin/admin_chart.php">조직도</a></li>
                     <li class="nav-item"><a class="nav-link" href="/admin/calculate_bonus.php">수수료정산</a></li>
                     <li class="nav-item"><a class="nav-link" href="/admin/admin_withdrawals.php">출금신청처리</a></li>
                          <li class="nav-item"><a class="nav-link" href="/admin/rank_analysis.php">직급승급분석</a></li>

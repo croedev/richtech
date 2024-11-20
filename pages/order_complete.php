@@ -40,8 +40,8 @@ try {
     $order = $order_result->fetch_assoc();
     $stmt->close();
 
-    //추천수당 계산, 호출
-    calculate_referral_bonus($order_id, $conn);
+    //추천수당 계산, 호출 (당분간 비활성화)
+  //  calculate_referral_bonus($order_id, $conn);
 
     echo "<h3>주문이 성공적으로 완료되었습니다!</h3>";
 

@@ -214,102 +214,102 @@ include __DIR__ . '/admin_header.php';
 </div>
 
 <style>
-.admin-container {
-    padding: 20px;
-    max-width: 1200px;
-    margin: 0 auto;
-}
+        .admin-container {
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
 
-.summary-stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 20px;
-    margin-bottom: 30px;
-}
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
 
-.stat-card {
-    background: #1a1a1a;
-    border: 1px solid rgba(212, 175, 55, 0.2);
-    border-radius: 10px;
-    padding: 20px;
-    text-align: center;
-}
+        .stat-card {
+            background: #1a1a1a;
+            border: 1px solid rgba(212, 175, 55, 0.2);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
 
-.stat-card h3 {
-    color: #d4af37;
-    font-size: 1rem;
-    margin-bottom: 10px;
-}
+        .stat-card h3 {
+            color: #d4af37;
+            font-size: 1rem;
+            margin-bottom: 10px;
+        }
 
-.text-gold {
-    color: #d4af37;
-    font-size: 1.5rem;
-    font-weight: bold;
-}
+        .text-gold {
+            color: #d4af37;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
 
-.recent-section {
-    background: #1a1a1a;
-    border: 1px solid rgba(212, 175, 55, 0.2);
-    border-radius: 10px;
-    padding: 20px;
-    margin-bottom: 30px;
-}
+        .recent-section {
+            background: #1a1a1a;
+            border: 1px solid rgba(212, 175, 55, 0.2);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
 
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-}
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
 
-.section-header h2 {
-    color: #d4af37;
-    font-size: 1.2rem;
-    margin: 0;
-}
+        .section-header h2 {
+            color: #d4af37;
+            font-size: 1.2rem;
+            margin: 0;
+        }
 
-.btn-gold {
-    background: linear-gradient(to right, #d4af37, #aa8a2e);
-    color: #000;
-    padding: 5px 15px;
-    border-radius: 5px;
-    text-decoration: none;
-    font-size: 0.9rem;
-}
+        .btn-gold {
+            background: linear-gradient(to right, #d4af37, #aa8a2e);
+            color: #000;
+            padding: 5px 15px;
+            border-radius: 5px;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
 
-.admin-table {
-    width: 100%;
-    border-collapse: collapse;
-}
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
 
-.admin-table th,
-.admin-table td {
-    padding: 10px;
-    text-align: left;
-    border-bottom: 1px solid rgba(212, 175, 55, 0.1);
-}
+        .admin-table th,
+        .admin-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid rgba(212, 175, 55, 0.1);
+        }
 
-.admin-table th {
-    background: rgba(212, 175, 55, 0.1);
-    color: #d4af37;
-    font-weight: normal;
-}
+        .admin-table th {
+            background: rgba(212, 175, 55, 0.1);
+            color: #d4af37;
+            font-weight: normal;
+        }
 
-.table-responsive {
-    overflow-x: auto;
-}
+        .table-responsive {
+            overflow-x: auto;
+        }
 
-@media (max-width: 768px) {
-    .summary-stats {
-        grid-template-columns: repeat(2, 1fr);
-    }
-}
+        @media (max-width: 768px) {
+            .summary-stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
 
-@media (max-width: 480px) {
-    .summary-stats {
-        grid-template-columns: 1fr;
-    }
-}
+        @media (max-width: 480px) {
+            .summary-stats {
+                grid-template-columns: 1fr;
+            }
+        }
 </style>
 
 <?php
