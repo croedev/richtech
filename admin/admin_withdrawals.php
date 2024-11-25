@@ -657,7 +657,4 @@ setInterval(() => {
 }, 30000);
 </script>
 
-<?php
-$conn->close();
-include __DIR__ . '/admin_footer.php';
-?>
+<?php include __DIR__ . '/../includes/footer.php'; ?>

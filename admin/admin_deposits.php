@@ -250,45 +250,6 @@ require_once __DIR__ . '/admin_header.php';
                 font-weight: 600;
             }
 
-            /* 검색 필터 섹션 */
-            .filter-section {
-                background: rgba(45, 45, 45, 0.9);
-                padding: 16px;
-                border-radius: 8px;
-                margin-bottom: 20px;
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            }
-
-            .filter-section form {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 12px;
-                align-items: center;
-            }
-
-            .filter-section .form-group {
-                flex: 1;
-                min-width: 200px;
-            }
-
-            .filter-section input,
-            .filter-section select {
-                width: 100%;
-                padding: 8px 12px;
-                border: 1px solid rgba(212, 175, 55, 0.2);
-                border-radius: 6px;
-                background: rgba(26, 26, 26, 0.95);
-                color: #fff;
-                font-size: 0.9rem;
-            }
-
-            .filter-section button {
-                padding: 8px 16px;
-                border-radius: 6px;
-                font-weight: 500;
-                transition: all 0.2s ease;
-            }
-
             /* 테이블 스타일 */
             .table-responsive {
                 background: rgba(26, 26, 26, 0.95);
@@ -394,16 +355,7 @@ require_once __DIR__ . '/admin_header.php';
                 box-shadow: 0 2px 8px rgba(212, 175, 55, 0.3);
             }
 
-            /* 반응형 조정 */
-            @media (max-width: 768px) {
-                .filter-section form {
-                    flex-direction: column;
-                }
-                
-                .filter-section .form-group {
-                    width: 100%;
-                }
-            }
+           
 </style>
 
 <div class="container">
@@ -449,38 +401,149 @@ require_once __DIR__ . '/admin_header.php';
     </div>
 
     <!-- 검색 필터 -->
-    <div class="filter-section">
-        <form method="get" class="flex items-center gap-2">
-            <input type="text" name="search" placeholder="회원명/아이디/트랜잭션" 
-                   value="<?php echo htmlspecialchars($_GET['search'] ?? ''); ?>"
-                   class="p-2 bg-gray-800 border border-gray-700 rounded" style="width:200px">
-            
-            <select name="status" class="p-2 bg-gray-800 border border-gray-700 rounded" style="width:120px">
-                <option value="">전체 상태</option>
-                <option value="pending" <?php echo isset($_GET['status']) && $_GET['status'] === 'pending' ? 'selected' : ''; ?>>처리대기</option>
-                <option value="completed" <?php echo isset($_GET['status']) && $_GET['status'] === 'completed' ? 'selected' : ''; ?>>완료</option>
-                <option value="failed" <?php echo isset($_GET['status']) && $_GET['status'] === 'failed' ? 'selected' : ''; ?>>실패</option>
-            </select>
+ <div class="filter-section">
+   <form method="get" class="search-form">
+       <!-- 검색어 입력 -->
+       <div class="search-group">
+           <input type="text" name="search" 
+                  placeholder="회원명/아이디/트랜잭션" 
+                  value="<?php echo htmlspecialchars($_GET['search'] ?? ''); ?>"
+                  class="search-input">
+                  
+           <select name="status" class="search-select">
+               <option value="">전체 상태</option>
+               <option value="pending" <?php echo isset($_GET['status']) && $_GET['status'] === 'pending' ? 'selected' : ''; ?>>처리대기</option>
+               <option value="completed" <?php echo isset($_GET['status']) && $_GET['status'] === 'completed' ? 'selected' : ''; ?>>완료</option> 
+               <option value="failed" <?php echo isset($_GET['status']) && $_GET['status'] === 'failed' ? 'selected' : ''; ?>>실패</option>
+           </select>
+       </div>
 
-            <input type="date" name="date_from" 
-                   value="<?php echo htmlspecialchars($_GET['date_from'] ?? ''); ?>"
-                   class="p-2 bg-gray-800 border border-gray-700 rounded" style="width:140px">
-            
-            <span class="text-gray-400">~</span>
-            
-            <input type="date" name="date_to" 
-                   value="<?php echo htmlspecialchars($_GET['date_to'] ?? ''); ?>"
-                   class="p-2 bg-gray-800 border border-gray-700 rounded" style="width:140px">
-            
-            <button type="submit" class="px-4 py-2 bg-gold text-black rounded hover:bg-gold-dark">
-                <i class="fas fa-search"></i> 검색
-            </button>
-            
-            <button type="button" onclick="exportToExcel()" class="px-4 py-2 bg-green60 text-white rounded hover:bg-green70">
-                <i class="fas fa-file-excel"></i> 엑셀저장
-            </button>
-        </form>
-    </div>
+       <!-- 날짜 선택 -->
+       <div class="date-group">
+           <input type="date" name="date_from" 
+                  value="<?php echo htmlspecialchars($_GET['date_from'] ?? ''); ?>"
+                  class="date-input">
+           <span class="date-separator">~</span>
+           <input type="date" name="date_to" 
+                  value="<?php echo htmlspecialchars($_GET['date_to'] ?? ''); ?>"
+                  class="date-input">
+       </div>
+
+       <!-- 버튼 그룹 -->
+       <div class="button-group">
+           <button type="submit" class="btn-submit">
+               <i class="fas fa-search"></i> 검색
+           </button>
+           <button type="button" onclick="exportToExcel()" class="btn-excel">
+               <i class="fas fa-file-excel"></i> 엑셀
+           </button>
+       </div>
+   </form>
+</div>
+
+<style>
+.filter-section {
+   background: rgba(45, 45, 45, 0.9);
+   padding: 15px;
+   border-radius: 8px;
+   margin-bottom: 20px;
+}
+
+.search-form {
+   display: flex;
+   flex-wrap: wrap;
+   gap: 10px;
+}
+
+.search-group {
+   display: flex;
+   gap: 10px;
+   flex: 2;
+   min-width: 300px;
+}
+
+.search-input {
+   flex: 2;
+   min-width: 200px;
+   padding: 8px;
+   background: rgb(26,26,26);
+   border: 1px solid rgba(212,175,55,0.2);
+   border-radius: 4px;
+   color: #fff;
+}
+
+.search-select {
+   width: 120px;
+   padding: 8px;
+   background: rgb(26,26,26);
+   border: 1px solid rgba(212,175,55,0.2);
+   border-radius: 4px;
+   color: #fff;
+}
+
+.date-group {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   flex: 2;
+   min-width: 300px;
+}
+
+.date-input {
+   width: 140px;
+   padding: 8px;
+   background: rgb(26,26,26);
+   border: 1px solid rgba(212,175,55,0.2);
+   border-radius: 4px;
+   color: #fff;
+}
+
+.date-separator {
+   color: #666;
+}
+
+.button-group {
+   display: flex;
+   gap: 10px;
+}
+
+.btn-submit,
+.btn-excel {
+   padding: 8px 16px;
+   border-radius: 4px;
+   font-size: 14px;
+   cursor: pointer;
+}
+
+.btn-submit {
+   background: linear-gradient(135deg,#d4af37,#f2d06b);
+   color: #000;
+   border: none;
+}
+
+.btn-excel {
+   background: #198754;
+   color: #fff;
+   border: none;
+}
+
+@media (max-width: 768px) {
+   .search-form {
+       grid-template-columns: repeat(2, 1fr);
+   }
+   
+   .search-group,
+   .date-group,
+   .button-group {
+       flex: 0 0 100%;
+   }
+   
+   .button-group {
+       display: grid;
+       grid-template-columns: 1fr 1fr;
+   }
+}
+</style>
 
     <!-- 입금 내역 테이블 -->
     <div class="table-responsive">
@@ -642,5 +705,5 @@ function showNotification(message, type = 'success') {
 
 <?php
 $conn->close();
-include __DIR__ . '/admin_footer.php';
+include __DIR__ . '/../includes/footer.php';
 ?>

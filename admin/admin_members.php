@@ -418,7 +418,7 @@ require_once __DIR__ . '/admin_header.php';
 </div>
 
 <!-- BSC 잔액 확인 모달 -->
-<div class="modal fade" id="bscBalanceModal" tabindex="-1">
+<div class="modal" id="bscBalanceModal" tabindex="-1" style="display: none;">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -498,209 +498,146 @@ include __DIR__ . '/admin_footer.php';
 
 
 <style>
-        /* 관리자 페이지 공통 스타일 */
-        :root {
-            --primary-gold: #d4af37;
-            --primary-dark: #1a1a1a;
-            --secondary-dark: #2d2d2d;
-            --text-primary: #ffffff;
-            --text-secondary: rgba(255, 255, 255, 0.7);
-            --border-color: rgba(212, 175, 55, 0.2);
-        }
+  /* 기본 설정 */
+:root {
+    --primary-gold: #d4af37;
+    --dark-bg: #121212;
+    --card-bg: rgba(26, 26, 26, 0.95);
+    --border-color: rgba(212, 175, 55, 0.2);
+}
 
-        body {
-            background-color: #121212;
-            color: var(--text-primary);
-            font-family: 'Noto Sans KR', sans-serif;
-        }
+body {
+    background-color: var(--dark-bg);
+    color: #ffffff;
+    font-family: 'Noto Sans KR', sans-serif;
+}
 
-        /* 카드 스타일 */
-        .card {
-            background: rgba(26, 26, 26, 0.95);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            margin-bottom: 1rem;
-        }
+/* 대시보드 통계 카드 */
+.summary-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+    padding: 0 15px;
+}
 
-        .card-header {
-            background: rgba(45, 45, 45, 0.9);
-            border-bottom: 1px solid var(--border-color);
-            padding: 0.8rem 1rem;
-            font-size: 0.9rem;
-            color: var(--primary-gold);
-        }
+.stat-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 15px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
 
-        .card-body {
-            padding: 1rem;
-        }
+.stat-card h5 {
+    color: var(--primary-gold);
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+}
 
-        /* 테이블 스타일 */
-        .table {
-            width: 100%;
-            margin-bottom: 0;
-            color: var(--text-primary);
-            font-size: 0.8rem;
-            border-collapse: separate;
-            border-spacing: 0;
-        }
+.stat-value {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #fff;
+}
 
-        .table th {
-            background: rgba(45, 45, 45, 0.9);
-            color: var(--primary-gold);
-            font-weight: 500;
-            padding: 0.5rem;
-            border-bottom: 1px solid var(--border-color);
-            white-space: nowrap;
-        }
+/* 모달 수정 */
+.modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 1040;
+}
 
-        .table td {
-            padding: 0.4rem 0.5rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            vertical-align: middle;
-        }
+.modal {
+    z-index: 1050;
+}
 
-        .table tbody tr:hover {
-            background: rgba(212, 175, 55, 0.05);
-        }
+.modal-dialog {
+    margin: 1.75rem auto;
+}
 
-        /* 폼 컨트롤 */
-        .form-control {
-            background-color: rgba(0, 0, 0, 0.2);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            font-size: 0.85rem;
-            padding: 0.4rem 0.8rem;
-        }
+.modal-content {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+}
 
-        .form-control:focus {
-            background-color: rgba(0, 0, 0, 0.3);
-            border-color: var(--primary-gold);
-            color: var(--text-primary);
-            box-shadow: none;
-        }
+/* 테이블 스타일링 */
+.table-responsive {
+    margin-top: 20px;
+}
 
-        /* 버튼 스타일 */
-        .btn {
-            font-size: 0.8rem;
-            padding: 0.3rem 0.8rem;
-            border-radius: 4px;
-        }
+.table {
+    background: transparent;
+}
 
-        .btn-gold {
-            background: linear-gradient(135deg, var(--primary-gold) 0%, #f2d06b 100%);
-            border: none;
-            color: #000;
-        }
+.table th {
+    background: rgba(45, 45, 45, 0.9);
+    color: var(--primary-gold);
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--border-color);
+}
 
-        .btn-gold:hover {
-            background: linear-gradient(135deg, #f2d06b 0%, var(--primary-gold) 100%);
-            transform: translateY(-1px);
-        }
+.table td {
+    color: #00fff;
+    border-color: rgba(255,255,255,0.1);
+}
 
-        /* 상태 배지 */
-        .badge {
-            padding: 0.3em 0.6em;
-            font-size: 0.75rem;
-            font-weight: 500;
-            border-radius: 12px;
-        }
+/* 반응형 조정 */
+@media (min-width: 768px) {
+    .summary-stats {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
 
-        .badge-success {
-            background: rgba(76, 175, 80, 0.1);
-            color: #4caf50;
-            border: 1px solid rgba(76, 175, 80, 0.2);
-        }
+@media (max-width: 767px) {
+    .summary-stats {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+    
+    .stat-card {
+        padding: 10px;
+    }
+    
+    .stat-card h5 {
+        font-size: 0.8rem;
+    }
+    
+    .stat-value {
+        font-size: 1rem;
+    }
+}
 
-        .badge-warning {
-            background: rgba(255, 193, 7, 0.1);
-            color: #ffc107;
-            border: 1px solid rgba(255, 193, 7, 0.2);
-        }
+/* 폼 요소 */
+.form-control, .form-select {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid var(--border-color);
+    color: #fff;
+}
 
-        /* 페이지네이션 */
-        .pagination {
-            margin-top: 1rem;
-            justify-content: center;
-        }
+.form-control:focus, .form-select:focus {
+    background: rgba(0,0,0,0.3);
+    border-color: var(--primary-gold);
+    color: #fff;
+    box-shadow: none;
+}
 
-        .page-link {
-            background: rgba(26, 26, 26, 0.95);
-            border: 1px solid var(--border-color);
-            color: var(--primary-gold);
-            padding: 0.4rem 0.8rem;
-            font-size: 0.85rem;
-        }
+/* 버튼 스타일 */
+.btn-gold {
+    background: linear-gradient(135deg, var(--primary-gold), #f2d06b);
+    color: #000;
+    border: none;
+    transition: all 0.3s ease;
+}
 
-        .page-link:hover {
-            background: rgba(212, 175, 55, 0.1);
-            color: var(--primary-gold);
-        }
-
-        .page-item.active .page-link {
-            background: var(--primary-gold);
-            border-color: var(--primary-gold);
-            color: #000;
-        }
-
-        /* 검색 필터 */
-        .filter-section {
-            background: rgba(45, 45, 45, 0.9);
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1rem;
-        }
-
-        .filter-section .form-group {
-            margin-bottom: 0.5rem;
-        }
-
-        /* 입력 그룹 */
-        .input-group-text {
-            background: rgba(45, 45, 45, 0.9);
-            border: 1px solid var(--border-color);
-            color: var(--text-secondary);
-        }
-
-        /* 모달 스타일 */
-        .modal-content {
-            background: var(--primary-dark);
-            border: 1px solid var(--border-color);
-        }
-
-        .modal-header {
-            border-bottom: 1px solid var(--border-color);
-            padding: 1rem;
-        }
-
-        .modal-footer {
-            border-top: 1px solid var(--border-color);
-            padding: 1rem;
-        }
-
-        /* 유틸리티 클래스 */
-        .text-gold {
-            color: var(--primary-gold) !important;
-        }
-
-        .border-gold {
-            border-color: var(--border-color) !important;
-        }
-
-        .bg-dark-custom {
-            background: var(--primary-dark) !important;
-        }
-
-        /* 반응형 조정 */
-        @media (max-width: 768px) {
-            .table-responsive {
-                font-size: 0.75rem;
-            }
-            
-            .btn {
-                font-size: 0.75rem;
-                padding: 0.25rem 0.6rem;
-            }
-        }
+.btn-gold:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
 </style>
 
 <script>
@@ -914,3 +851,7 @@ include __DIR__ . '/admin_footer.php';
         });
 
 </script>
+
+
+
+<?php include __DIR__ . '/../includes/footer.php'; ?>
