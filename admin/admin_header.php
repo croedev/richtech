@@ -85,10 +85,12 @@
                     <li class="nav-item"><a class="nav-link" href="/admin/calculate_bonus.php">수수료정산</a></li>
                     <li class="nav-item"><a class="nav-link" href="/admin/admin_withdrawals.php">출금신청처리</a></li>
                          <li class="nav-item"><a class="nav-link" href="/admin/rank_analysis.php">직급승급분석</a></li>
-                    <li class="nav-item"><a class="nav-link" href="/admin/admin_settings.php">설정</a></li>
+                  
     
                                                        
     <li class="nav-item"><a class="nav-link" href="/admin/admin_company.php">회사정산통계</a></li>
+
+
 
                 </ul>
             </div>

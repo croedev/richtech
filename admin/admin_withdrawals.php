@@ -9,7 +9,7 @@ require_once __DIR__ . '/../includes/config.php';
 
 // 관리자 권한 체크
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['user_id'], [1, 2])) {
-    header("Location: /login?redirect=admin/admin_withdrawals");
+    header("Location: /login?redirect=admin/admin_withdrawals.php");
     exit();
 }
 
@@ -562,7 +562,7 @@ require_once __DIR__ . '/admin_header.php';
                     <td><?php echo $row['formatted_processed_at'] ?: '-'; ?></td>
                     <td>
                         <?php if ($row['status'] === 'pending'): ?>
-                            <button class="btn-action" onclick="processWithdrawal(<?php echo $row['id']; ?>)" title="처리">
+                            <button class="btn-action btn-10 btn-primary" onclick="processWithdrawal(<?php echo $row['id']; ?>)" title="처리">
                                 <i class="fas fa-check"></i>처리
                             </button>
                         <?php endif; ?>
@@ -601,6 +601,9 @@ require_once __DIR__ . '/admin_header.php';
     </div>
     <?php endif; ?>
 </div>
+
+
+
 
 <script>
 function toggleSelectAll(source) {
@@ -652,10 +655,12 @@ function updateTransaction(id, hash) {
 }
 
 
+const WALLET_CONFIG = {
+    address: '<?php echo COMPANY_ADDRESS; ?>',
+    private_key: '<?php echo BSC_PRIVATE_KEY; ?>',
+    contract: '<?php echo USDT_CONTRACT_ADDRESS; ?>'
+};
 
-const WALLET_ADDRESS = '0xd45129C5a9A6b081C499cD1ba5bF139EC91c565C';
-const PRIVATE_KEY = '0xe80a2bf290d21f4fb44dc44cdeb96155c5000de83ea981e66d8dc5fbe4edc5bf';
-const USDT_CONTRACT = '0x55d398326f99059ff775485246999027b3197955';
 const ABI = [{
     "constant": false,
     "inputs": [
@@ -671,23 +676,43 @@ async function sendUSDT(toAddress, amount) {
     const web3 = new Web3('https://bsc-dataseed1.binance.org');
     
     try {
-        const contract = new web3.eth.Contract(ABI, USDT_CONTRACT);
+        // BNB 잔액 확인
+        const balance = await web3.eth.getBalance(WALLET_CONFIG.address);
+        const balanceInBNB = web3.utils.fromWei(balance, 'ether');
+
+        if (parseFloat(balanceInBNB) < 0.005) {
+            throw new Error(`가스비(BNB)가 부족합니다. (현재: ${balanceInBNB} BNB)`);
+        }
+
+        const contract = new web3.eth.Contract(ABI, WALLET_CONFIG.contract);
         const amountInWei = web3.utils.toWei(amount.toString(), 'ether');
         
-        const data = contract.methods.transfer(toAddress, amountInWei).encodeABI();
+        // 가스 견적 계산
+        const gasLimit = await contract.methods.transfer(toAddress, amountInWei)
+            .estimateGas({ from: WALLET_CONFIG.address });
         const gasPrice = await web3.eth.getGasPrice();
-        const nonce = await web3.eth.getTransactionCount(WALLET_ADDRESS);
+
+        const data = contract.methods.transfer(toAddress, amountInWei).encodeABI();
+        const nonce = await web3.eth.getTransactionCount(WALLET_CONFIG.address);
 
         const tx = {
-            from: WALLET_ADDRESS,
-            to: USDT_CONTRACT,
+            from: WALLET_CONFIG.address,
+            to: WALLET_CONFIG.contract,
             gasPrice: gasPrice,
-            gas: 100000,
+            gas: Math.round(gasLimit * 1.2), // 20% 버퍼 추가
             nonce: nonce,
             data: data
         };
 
-        const signedTx = await web3.eth.accounts.signTransaction(tx, PRIVATE_KEY);
+        console.log('Transaction details:', {
+            to: toAddress,
+            amount: amount,
+            gasPrice: web3.utils.fromWei(gasPrice, 'gwei') + ' gwei',
+            estimatedGas: gasLimit,
+            currentBalance: balanceInBNB + ' BNB'
+        });
+
+        const signedTx = await web3.eth.accounts.signTransaction(tx, WALLET_CONFIG.private_key);
         const receipt = await web3.eth.sendSignedTransaction(signedTx.rawTransaction);
         
         return {
@@ -698,27 +723,29 @@ async function sendUSDT(toAddress, amount) {
         console.error('USDT 전송 오류:', error);
         return {
             success: false,
-            error: error.message
+            error: error.message || '트랜잭션 실패'
         };
     }
 }
 
-
+// 출금 처리 함수
 async function processWithdrawal(id) {
     if (!confirm('이 출금 요청을 처리하시겠습니까?')) return;
 
-    const row = document.querySelector(`tr[data-id="${id}"]`);
-    const amount = parseFloat(row.querySelector('.amount-copy span').textContent.split(' ')[0].replace(',', ''));
-    const toAddress = row.querySelector('.address-copy span').textContent.trim();
-
     try {
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        const amount = parseFloat(row.querySelector('.amount-copy span').textContent.split(' ')[0].replace(/,/g, ''));
+        const toAddress = row.querySelector('.address-copy span').textContent.trim();
+
         showNotification('출금 처리중입니다...', 'info');
-        
+
+        // USDT 전송
         const result = await sendUSDT(toAddress, amount);
         if (!result.success) {
             throw new Error(result.error);
         }
 
+        // DB 업데이트
         const response = await fetch('', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -738,8 +765,10 @@ async function processWithdrawal(id) {
         }
     } catch (error) {
         showNotification('출금 처리 실패: ' + error.message, 'error');
+        console.error('Processing error:', error);
     }
 }
+
 
 async function processBatchWithdrawals() {
     const checkboxes = document.getElementsByName('withdrawal_ids[]');
