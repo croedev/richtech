@@ -61,10 +61,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->close();
         
         // 유효성 검사
-        if ($request_amount_usdp < 50) {
-            throw new Exception("최소 출금 금액은 50 USDP입니다.");
-        }
-        
         if ($request_amount_usdp > $current_point) {
             throw new Exception("출금 요청 금액이 보유 포인트를 초과합니다.");
         }
@@ -345,8 +341,8 @@ include __DIR__ . '/../includes/header.php';
             <div class="form-group">
                 <label class="form-label">출금 신청 금액 (USDP)</label>
                 <input type="number" name="amount" id="amount" class="form-control" 
-                       step="0.0001" min="50" required placeholder="최소 50 USDP">
-                <div class="fee-info mt10 text-green5 fs-12">* 최소 출금 금액: 50 USDP / 수수료: 3.00%</div>
+                       step="0.0001" required placeholder="출금 금액을 입력하세요">
+                <div class="fee-info mt10 text-green5 fs-12">* 수수료: 3.00%</div>
             </div>
 
             <div class="form-group">
@@ -366,7 +362,6 @@ include __DIR__ . '/../includes/header.php';
             출금 안내사항 <span id="toggle-icon">▼</span>
         </div>
         <ul class="notice-list" id="notice-list" style="display: none;">
-            <li class="fs-12 notosans">최소 출금 금액은 50 USDP입니다.</li>
             <li class="fs-12 notosans">출금 수수료는 3.00%가 적용됩니다.</li>
             <li class="fs-12 notosans">BSC(BEP-20) USDT로만 출금 가능합니다.</li>
             <li class="fs-12 notosans">실제 출금액은 신청금액에서 수수료를 제외한 금액입니다.</li>
@@ -494,11 +489,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const currentPoint = <?php echo $current_point; ?>;
         
         // 유효성 검사
-        if (amount < 50) {
-            showNotification('최소 출금 금액은 50 USDP입니다.', 'error');
-            return false;
-        }
-        
         if (amount > currentPoint) {
             showNotification('출금 금액이 보유 포인트를 초과합니다.', 'error');
             return false;
@@ -558,7 +548,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const feeInfo = document.createElement('div');
         feeInfo.className = 'fee-calculation';
         
-        if (amount && amount >= 50) {
+        if (amount && amount > 0) {
             const fee = amount * 0.03;
             const actualAmount = amount - fee;
             feeInfo.innerHTML = `
@@ -573,7 +563,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (existingInfo) {
             existingInfo.remove();
         }
-        if (amount && amount >= 50) {
+        if (amount && amount > 0) {
             this.parentElement.appendChild(feeInfo);
         }
     });

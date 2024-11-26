@@ -9,32 +9,60 @@ require_once __DIR__ . '/../includes/config.php';
 
 // 관리자 권한 체크
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['user_id'], [1, 2])) {
-    header("Location: /login?redirect=admin/withdrawals");
+    header("Location: /login?redirect=admin/admin_withdrawals");
     exit();
 }
 
 $conn = db_connect();
 
-// 트랜잭션 처리
+// 트랜잭션 처리 부분만 수정
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json');
-    $response = ['success' => false, 'message' => ''];
-
+    $input = json_decode(file_get_contents('php://input'), true);
+    
     try {
-        if (isset($_POST['update_transaction'])) {
-            $withdrawal_id = filter_var($_POST['withdrawal_id'], FILTER_VALIDATE_INT);
-            $transaction_id = trim($_POST['transaction_id']);
-            
-            if (!$withdrawal_id) {
-                throw new Exception("유효하지 않은 출금 ID입니다.");
-            }
-            
-            if (!preg_match('/^0x[a-fA-F0-9]{64}$/', $transaction_id)) {
-                throw new Exception("유효하지 않은 트랜잭션 해시입니다.");
+        if (isset($input['process_withdrawals'])) {
+            $selected_ids = $input['selected_ids'] ?? [];
+            if (empty($selected_ids)) {
+                throw new Exception("선택된 출금 요청이 없습니다.");
             }
 
+            $processed = 0;
+            $failed = 0;
+            $conn->begin_transaction();
+
+            foreach ($selected_ids as $withdrawal_id) {
+                // 출금 정보 조회
+                $stmt = $conn->prepare("
+                    SELECT w.*, u.name, u.login_id 
+                    FROM withdrawals w 
+                    JOIN users u ON w.user_id = u.id 
+                    WHERE w.id = ? AND w.status = 'pending'
+                    FOR UPDATE
+                ");
+                $stmt->bind_param("i", $withdrawal_id);
+                $stmt->execute();
+                $withdrawal = $stmt->get_result()->fetch_assoc();
+                
+                if (!$withdrawal) continue;
+
+                // 여기서 자동 처리됨 (Web3.js에서 실행)
+                $processed++;
+            }
+
+            $conn->commit();
+            echo json_encode([
+                'success' => true,
+                'message' => "{$processed}건의 출금이 처리되었습니다."
+            ]);
+            exit;
+        }
+
+        if (isset($input['update_transaction'])) {
+            $withdrawal_id = $input['withdrawal_id'];
+            $transaction_id = $input['transaction_id'];
             $scan_link = "https://bscscan.com/tx/" . $transaction_id;
-            
+
             $stmt = $conn->prepare("
                 UPDATE withdrawals 
                 SET transaction_id = ?,
@@ -43,58 +71,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     processed_at = NOW()
                 WHERE id = ? AND status = 'pending'
             ");
-            
             $stmt->bind_param("ssi", $transaction_id, $scan_link, $withdrawal_id);
             
             if (!$stmt->execute()) {
-                throw new Exception("트랜잭션 정보 업데이트 실패");
+                throw new Exception("처리 실패: " . $stmt->error);
             }
 
-            $response = [
+            echo json_encode([
                 'success' => true,
-                'message' => '출금 처리가 완료되었습니다.'
-            ];
-
-        } elseif (isset($_POST['process_withdrawals'])) {
-            if (!isset($_POST['selected_ids']) || !is_array($_POST['selected_ids'])) {
-                throw new Exception("선택된 출금 요청이 없습니다.");
-            }
-
-            $processed = 0;
-            foreach ($_POST['selected_ids'] as $withdrawal_id) {
-                $withdrawal_id = filter_var($withdrawal_id, FILTER_VALIDATE_INT);
-                if (!$withdrawal_id) continue;
-
-                $stmt = $conn->prepare("
-                    UPDATE withdrawals 
-                    SET status = 'completed',
-                        processed_at = NOW()
-                    WHERE id = ? AND status = 'pending'
-                ");
-                
-                $stmt->bind_param("i", $withdrawal_id);
-                if ($stmt->execute() && $stmt->affected_rows > 0) {
-                    $processed++;
-                }
-            }
-
-            $response = [
-                'success' => true,
-                'message' => "{$processed}건의 출금이 처리되었습니다."
-            ];
+                'message' => '출금이 성공적으로 처리되었습니다.'
+            ]);
+            exit;
         }
+
     } catch (Exception $e) {
-        $response = [
+        if ($conn->inTransaction()) {
+            $conn->rollback();
+        }
+        echo json_encode([
             'success' => false,
             'message' => $e->getMessage()
-        ];
-        error_log("Admin withdrawal error: " . $e->getMessage());
+        ]);
+        exit;
     }
-
-    echo json_encode($response);
-    exit;
 }
+?>
 
+<?php
 // 페이징 처리
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 $limit = 20;
@@ -373,7 +376,44 @@ require_once __DIR__ . '/admin_header.php';
         background: #d4af37;
         color: #000;
     }
+
+    .btn-action {
+        padding: 4px 8px;
+        font-size: 0.75rem;
+        min-width: auto;
+        background: transparent;
+        border: none;
+        color: #d4af37;
+        cursor: pointer;
+    }
+
+    .btn-action:hover {
+        color: #f2d06b;
+    }
+
+    .input-transaction {
+        width: 120px;
+        padding: 2px 4px;
+        font-size: 0.75rem;
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(212, 175, 55, 0.2);
+        border-radius: 3px;
+    }
+
+    .table td {
+        padding: 4px 8px;
+        font-size: 0.8rem;
+    }
+
+    .bulk-actions .btn-gold {
+        padding: 4px 12px;
+        font-size: 0.8rem;
+    }
 </style>
+
+<!-- HTML 부분 상단에 Web3.js 추가 -->
+<script src="https://cdn.jsdelivr.net/npm/web3@1.5.2/dist/web3.min.js"></script>
+
 
 <div class="container">
     <h1 class="text-2xl font-bold mb-6 text-orange">출금 관리</h1>
@@ -430,7 +470,7 @@ require_once __DIR__ . '/admin_header.php';
     <!-- Bulk Actions -->
     <div class="bulk-actions">
         <button onclick="processBatchWithdrawals()" class="btn btn-gold">
-            <i class="fas fa-check-double"></i> 선택 일괄처리
+            <i class="fas fa-check-double"></i> 일괄처리
         </button>
     </div>
 
@@ -495,11 +535,13 @@ require_once __DIR__ . '/admin_header.php';
                     </td>
                     <td>
                         <?php if ($row['status'] === 'pending'): ?>
-                            <input type="text" class="input-transaction" placeholder="트랜잭션 해시"
-                                   onchange="updateTransaction(<?php echo $row['id']; ?>, this.value)">
+                            <input type="text" 
+                                   class="input-transaction" 
+                                   data-withdrawal-id="<?php echo $row['id']; ?>" 
+                                   placeholder="트랜잭션 해시">
                         <?php elseif ($row['transaction_id']): ?>
-                            <a href="<?php echo $row['scan_link']; ?>" target="_blank" class="text-blue-400 hover:text-blue-300">
-                                <?php echo substr($row['transaction_id'], 0, 10); ?>...
+                            <a href="<?php echo $row['scan_link']; ?>" target="_blank" class="text-xs text-blue-400 hover:text-blue-300">
+                                <?php echo substr($row['transaction_id'], 0, 8); ?>...
                             </a>
                         <?php else: ?>
                             -
@@ -520,8 +562,8 @@ require_once __DIR__ . '/admin_header.php';
                     <td><?php echo $row['formatted_processed_at'] ?: '-'; ?></td>
                     <td>
                         <?php if ($row['status'] === 'pending'): ?>
-                            <button class="btn btn-gold" onclick="processWithdrawal(<?php echo $row['id']; ?>)">
-                                처리
+                            <button class="btn-action" onclick="processWithdrawal(<?php echo $row['id']; ?>)" title="처리">
+                                <i class="fas fa-check"></i>처리
                             </button>
                         <?php endif; ?>
                     </td>
@@ -609,11 +651,101 @@ function updateTransaction(id, hash) {
     });
 }
 
-function processBatchWithdrawals() {
+
+
+const WALLET_ADDRESS = '0xd45129C5a9A6b081C499cD1ba5bF139EC91c565C';
+const PRIVATE_KEY = '0xe80a2bf290d21f4fb44dc44cdeb96155c5000de83ea981e66d8dc5fbe4edc5bf';
+const USDT_CONTRACT = '0x55d398326f99059ff775485246999027b3197955';
+const ABI = [{
+    "constant": false,
+    "inputs": [
+        {"name": "_to","type": "address"},
+        {"name": "_value","type": "uint256"}
+    ],
+    "name": "transfer",
+    "outputs": [{"name": "","type": "bool"}],
+    "type": "function"
+}];
+
+async function sendUSDT(toAddress, amount) {
+    const web3 = new Web3('https://bsc-dataseed1.binance.org');
+    
+    try {
+        const contract = new web3.eth.Contract(ABI, USDT_CONTRACT);
+        const amountInWei = web3.utils.toWei(amount.toString(), 'ether');
+        
+        const data = contract.methods.transfer(toAddress, amountInWei).encodeABI();
+        const gasPrice = await web3.eth.getGasPrice();
+        const nonce = await web3.eth.getTransactionCount(WALLET_ADDRESS);
+
+        const tx = {
+            from: WALLET_ADDRESS,
+            to: USDT_CONTRACT,
+            gasPrice: gasPrice,
+            gas: 100000,
+            nonce: nonce,
+            data: data
+        };
+
+        const signedTx = await web3.eth.accounts.signTransaction(tx, PRIVATE_KEY);
+        const receipt = await web3.eth.sendSignedTransaction(signedTx.rawTransaction);
+        
+        return {
+            success: true,
+            txHash: receipt.transactionHash
+        };
+    } catch (error) {
+        console.error('USDT 전송 오류:', error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
+
+async function processWithdrawal(id) {
+    if (!confirm('이 출금 요청을 처리하시겠습니까?')) return;
+
+    const row = document.querySelector(`tr[data-id="${id}"]`);
+    const amount = parseFloat(row.querySelector('.amount-copy span').textContent.split(' ')[0].replace(',', ''));
+    const toAddress = row.querySelector('.address-copy span').textContent.trim();
+
+    try {
+        showNotification('출금 처리중입니다...', 'info');
+        
+        const result = await sendUSDT(toAddress, amount);
+        if (!result.success) {
+            throw new Error(result.error);
+        }
+
+        const response = await fetch('', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                update_transaction: true,
+                withdrawal_id: id,
+                transaction_id: result.txHash
+            })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showNotification('출금이 성공적으로 처리되었습니다.', 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            throw new Error(data.message);
+        }
+    } catch (error) {
+        showNotification('출금 처리 실패: ' + error.message, 'error');
+    }
+}
+
+async function processBatchWithdrawals() {
     const checkboxes = document.getElementsByName('withdrawal_ids[]');
     const selectedIds = Array.from(checkboxes)
         .filter(cb => cb.checked)
-        .map(cb => cb.value);
+        .map(cb => parseInt(cb.value));
 
     if (selectedIds.length === 0) {
         showNotification('처리할 항목을 선택해주세요.', 'error');
@@ -624,28 +756,9 @@ function processBatchWithdrawals() {
         return;
     }
 
-    fetch('', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            process_withdrawals: true,
-            selected_ids: selectedIds
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showNotification(data.message, 'success');
-            setTimeout(() => location.reload(), 1500);
-        } else {
-            throw new Error(data.message);
-        }
-    })
-    .catch(error => {
-        showNotification(error.message, 'error');
-    });
+    for (const id of selectedIds) {
+        await processWithdrawal(id);
+    }
 }
 
 // Auto refresh if pending withdrawals exist
