@@ -9,17 +9,15 @@ ini_set('error_log', '/home/lidyahkc/dir/richtech.club/pages/error_bonus.log');
 require_once __DIR__ . '/../includes/config.php';
 
 
-
 // 1.추천수당 계산 함수(500usd 이상 실적 기준)
-//추천수당-중복계산방지
 function calculate_referral_bonus($order_id, $conn) {
     try {
         // 트랜잭션 시작
         $conn->begin_transaction();
 
-        // 1. 주문 검증
+        // 1. 주문 검증 - created_at 컬럼 추가
         $stmt = $conn->prepare("
-            SELECT o.user_id, o.total_amount, o.paid_referral, o.status 
+            SELECT o.user_id, o.total_amount, o.paid_referral, o.status, o.created_at 
             FROM orders o 
             WHERE o.id = ? 
             FOR UPDATE
@@ -44,6 +42,7 @@ function calculate_referral_bonus($order_id, $conn) {
 
         $source_user_id = $order['user_id'];
         $source_amount = $order['total_amount'];
+        $order_created_at = $order['created_at']; // 주문 생성일시 저장
         $current_user_id = $source_user_id;
         $level = 1;
         $max_level = 5;
@@ -82,7 +81,7 @@ function calculate_referral_bonus($order_id, $conn) {
             $commission_rate = ($referrer['myAmount'] >= 500) ? $commission_rates[$level] : 0;
             $amount = round($source_amount * ($commission_rate / 100), 2); // 소수점 2자리까지
 
-            // 수당 내역 저장
+            // 수당 내역 저장 - order_date를 orders.created_at 값으로 변경
             $stmt = $conn->prepare("
                 INSERT INTO bonus_referral (
                     user_id, 
@@ -94,18 +93,19 @@ function calculate_referral_bonus($order_id, $conn) {
                     amount,
                     order_date,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
             ");
 
             $stmt->bind_param(
-                "iiiiddd", 
+                "iiiiddds", 
                 $referred_by,
                 $order_id,
                 $source_user_id,
                 $source_amount,
                 $level,
                 $commission_rate,
-                $amount
+                $amount,
+                $order_created_at  // orders 테이블의 created_at 값 사용
             );
 
             if (!$stmt->execute()) {
@@ -156,6 +156,7 @@ function calculate_referral_bonus($order_id, $conn) {
         throw $e;
     }
 }
+
 
 
 // 2.직급수당 계산 함수 (2024.11.18수정)
@@ -562,7 +563,7 @@ function validateDate($date) {
 
 
 
-// 회원들의 실적 업데이트 및 직급 승급 계산 함수
+// 4.회원들의 실적 업데이트 및 직급 승급 계산 함수 (처음부터 계산해서 값을 업데이트)
 function update_user_performance_and_rank($conn) {
     // 모든 회원들의 실적 업데이트
     $stmt = $conn->prepare("SELECT id FROM users");
@@ -619,7 +620,7 @@ function update_user_performance_and_rank($conn) {
     }
 }
 
-// 좌우 실적 및 회원 수 계산 함수
+// 4.1우 실적 및 회원 수 계산 함수
 function calculate_leg_volume($conn, $user_id, $position) {
     $members = 0;
     $amount = 0.0;
@@ -645,7 +646,7 @@ function calculate_leg_volume($conn, $user_id, $position) {
     return ['members' => $members, 'amount' => $amount];
 }
 
-// 조직 트리를 재귀적으로 탐색하는 함수
+// 4.2조직 트리를 재귀적으로 탐색하는 함수
 function traverse_leg($conn, $user_id, &$visited, &$members, &$amount) {
     if (in_array($user_id, $visited)) {
         return;
@@ -677,7 +678,7 @@ function traverse_leg($conn, $user_id, &$visited, &$members, &$amount) {
     }
 }
 
-// 직급 승급 계산 함수 (수정)
+// 4.3직급 승급 계산 함수 (수정)
 function calculate_rank_promotion($conn, $user_id, $myAmount, $referral_count, $lesser_leg_amount, $left_amounts, $right_amounts) {
     // 승급 기준 설정
     $rank_requirements = [
@@ -749,7 +750,7 @@ function calculate_rank_promotion($conn, $user_id, $myAmount, $referral_count, $
 }
 
 
-// 승급 기준 충족 날짜 찾기 함수 (추가)
+// 4.4승급 기준 충족 날짜 찾기 함수 (추가)
 function find_promotion_date($conn, $user_id, $requirements) {
     // 개인 매출 누적 합계 추적
     $total_myAmount = 0;
@@ -795,7 +796,7 @@ function find_promotion_date($conn, $user_id, $requirements) {
 
 
 
-// 회사 일일 통계 저장 함수
+// 5.회사 일일 통계 저장 함수
 function save_company_state($conn, $date) {
    $transaction_started = false;
    

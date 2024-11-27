@@ -2527,3 +2527,24 @@ CREATE TABLE `bonus_center` (
   CONSTRAINT `fk_bonus_center_organization` FOREIGN KEY (`organization_id`) REFERENCES `organizations` (`id`),
   CONSTRAINT `fk_bonus_center_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='센터 수수료 내역'
+
+
+
+
+admin_withdrawals.php는 현재 수동으로 전송한후 전송완료 확인버튼으로 전송여부를 기록한다.  즉, withdrawals테이블에 이미 출금신청을 해온 유저들의 목록을 관리자 페이지에서 불러와서, 확인후,   관리자 지갑주소에서  보유하고 있는 BSC기반의 USDT를  목록에 나와있는 실출금액과 상대방주소로 일일이 수동으로 다른 지갑에서 전송해준 다음에 다시 관리자페이지에서 수동으로 <처리버튼>을 클릭하여야  처리완료가 된다.
+
+이것을 자동으로 버튼클릭하면 처리하고 그 결과를 withdrawals테이블에 저장하는 기능을 추가하라.
+나의 지갑과 개인키를 활용해서 최대한 단순하게 처리하는 코드를 찾아내라. cdn이나 라이브러리나 api를 활용해서 처리하라. 가능한 추가설치등은 거이 하지 않고 바로 처리하는 방법을 찾아라.
+나의 운영체제는 php7.4이고, 라이브러리는 최대한 추가설치없이 바로 처리하는 방법을 찾아라.
+bsc기반 bep20 방식으로 usdt전송하는 라이브러리는 최대한 추가설치없이 바로 처리하는 방법을 찾아라.
+bnb수수료는 충분히 내 지갑에 충전해뒀다.  당신의 의견을 말하라. 현재의 관리자 페이지에서 출금신청내역에서 처리버튼을 누르면 출금이 완료되는 코드를 작성함에 있어 전문가로서 당신의 구현방법을 자세히 설명하라. web3.js 또는 open source, 또는 업체들이 제공하는 api등 최대한 연구해서 말하고 작성하라.
+
+나의지갑주소 0xd45129C5a9A6b081C499cD1ba5bF139EC91c565C
+나의개인키 0xe80a2bf290d21f4fb44dc44cdeb96155c5000de83ea981e66d8dc5fbe4edc5bf
+
+
+위의 web3.js cdn으로 처리시..  당신이 기존 php코드에서 처리하여야 할 목록을 선택하여 처리하기 버튼을 누르면, 그 다음 프로세스는 어떻게 되는가?
+고객의 주소 to_address 로
+금액은 actual_amount_usdt가 
+고객의 주소로 해당되는 usdt가 전송되고, 그결과가 withdrawals테이블에 
+ transaction_id, scan_link, status =completed,  processed_at =timestamp 값들이 저장되고 "전송이 성공하였습니다." 라고 기록되게 할수 있나요?

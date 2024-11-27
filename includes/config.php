@@ -1,12 +1,15 @@
-<?php /*
+<?php 
 error_reporting(E_ALL);
-ini_set('display_errors', 0);
+ini_set('display_errors', 0); // 에러 메시지를 화면에 표시
+ini_set('display_startup_errors', 1);
 ini_set('log_errors', 1);
-ini_set('error_log', '../error.log');
-*/
-?>
+ini_set('error_log', '/home/lidyahkc/dir/richtech.club/pages/error.log');
 
-<?php
+
+require_once __DIR__ . '/../vendor/autoload.php';
+use Dotenv\Dotenv;
+$dotenv = Dotenv::createImmutable(__DIR__ . '/..');
+$dotenv->load();
 
 date_default_timezone_set('Asia/Seoul');
 // 데이터베이스 설정
@@ -25,10 +28,10 @@ define('KAKAO_API_KEY', '7f565cfa518fbdb316c34f6c45825d64');
 
 
 // BSC 관련 설정
+define('BSC_NODE_URL', 'https://bsc-dataseed1.binance.org/'); // BSC 메인넷 노드 URL
 define('BSC_API_KEY', 'WX9KE9S86IE93WAC2PXG59NTRPGFJ2XDU6');
 define('USDT_CONTRACT_ADDRESS', '0x55d398326f99059ff775485246999027b3197955');
-define('COMPANY_ADDRESS', '0xd45129C5a9A6b081C499cD1ba5bF139EC91c565C'); 
-define('BSC_PRIVATE_KEY', '0xe80a2bf290d21f4fb44dc44cdeb96155c5000de83ea981e66d8dc5fbe4edc5bf');
+define('COMPANY_ADDRESS', '0xB3761A20c0DF9b58b6284EB2B9894696Eb735119'); 
 
 
 /**

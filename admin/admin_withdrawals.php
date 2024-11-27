@@ -4,100 +4,37 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 ini_set('error_log', '/home/lidyahkc/dir/richtech.club/pages/error.log');
 
-session_start();
+require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../includes/config.php';
+
+// Web3 관련 클래스 사용을 위해 네임스페이스 선언
+use Web3\Web3;
+use Web3\Contract;
+use Web3\Utils;
+use Web3\Providers\HttpProvider;
+use Web3\RequestManagers\HttpRequestManager;
+
+session_start();
 
 // 관리자 권한 체크
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['user_id'], [1, 2])) {
-    header("Location: /login?redirect=admin/admin_withdrawals.php");
+    header("Location: /login.php?redirect=admin/admin_withdrawals.php");
     exit();
 }
 
 $conn = db_connect();
 
-// 트랜잭션 처리 부분만 수정
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    header('Content-Type: application/json');
-    $input = json_decode(file_get_contents('php://input'), true);
-    
-    try {
-        if (isset($input['process_withdrawals'])) {
-            $selected_ids = $input['selected_ids'] ?? [];
-            if (empty($selected_ids)) {
-                throw new Exception("선택된 출금 요청이 없습니다.");
-            }
 
-            $processed = 0;
-            $failed = 0;
-            $conn->begin_transaction();
+// 개인키를 환경 변수에서 가져옵니다.
+$privateKey = getenv('BSC_PRIVATE_KEY') ?: $_ENV['BSC_PRIVATE_KEY'] ?? null;
 
-            foreach ($selected_ids as $withdrawal_id) {
-                // 출금 정보 조회
-                $stmt = $conn->prepare("
-                    SELECT w.*, u.name, u.login_id 
-                    FROM withdrawals w 
-                    JOIN users u ON w.user_id = u.id 
-                    WHERE w.id = ? AND w.status = 'pending'
-                    FOR UPDATE
-                ");
-                $stmt->bind_param("i", $withdrawal_id);
-                $stmt->execute();
-                $withdrawal = $stmt->get_result()->fetch_assoc();
-                
-                if (!$withdrawal) continue;
+// 디버깅을 위해 개인키의 값을 확인합니다.
 
-                // 여기서 자동 처리됨 (Web3.js에서 실행)
-                $processed++;
-            }
-
-            $conn->commit();
-            echo json_encode([
-                'success' => true,
-                'message' => "{$processed}건의 출금이 처리되었습니다."
-            ]);
-            exit;
-        }
-
-        if (isset($input['update_transaction'])) {
-            $withdrawal_id = $input['withdrawal_id'];
-            $transaction_id = $input['transaction_id'];
-            $scan_link = "https://bscscan.com/tx/" . $transaction_id;
-
-            $stmt = $conn->prepare("
-                UPDATE withdrawals 
-                SET transaction_id = ?,
-                    scan_link = ?,
-                    status = 'completed',
-                    processed_at = NOW()
-                WHERE id = ? AND status = 'pending'
-            ");
-            $stmt->bind_param("ssi", $transaction_id, $scan_link, $withdrawal_id);
-            
-            if (!$stmt->execute()) {
-                throw new Exception("처리 실패: " . $stmt->error);
-            }
-
-            echo json_encode([
-                'success' => true,
-                'message' => '출금이 성공적으로 처리되었습니다.'
-            ]);
-            exit;
-        }
-
-    } catch (Exception $e) {
-        if ($conn->inTransaction()) {
-            $conn->rollback();
-        }
-        echo json_encode([
-            'success' => false,
-            'message' => $e->getMessage()
-        ]);
-        exit;
-    }
+if (!$privateKey) {
+    throw new Exception('환경 변수 BSC_PRIVATE_KEY가 설정되지 않았습니다.');
 }
-?>
 
-<?php
+
 // 페이징 처리
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 $limit = 20;
@@ -137,16 +74,6 @@ if (!empty($_GET['date_to'])) {
     $param_types .= 's';
 }
 
-// 통계 데이터 조회
-$stats = $conn->query("
-    SELECT 
-        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
-        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_count,
-        SUM(CASE WHEN status = 'completed' THEN actual_amount_usdt ELSE 0 END) as total_withdrawn,
-        SUM(CASE WHEN status = 'completed' AND DATE(processed_at) = CURDATE() THEN actual_amount_usdt ELSE 0 END) as today_withdrawn
-    FROM withdrawals
-")->fetch_assoc();
-
 // WHERE 절 구성
 $where_clause = !empty($search_conditions) ? 'WHERE ' . implode(' AND ', $search_conditions) : '';
 
@@ -166,11 +93,12 @@ $stmt->execute();
 $total_records = $stmt->get_result()->fetch_assoc()['total'];
 $total_pages = ceil($total_records / $limit);
 
-// 메인 쿼리
+// 출금 목록 조회
 $query = "
     SELECT w.*, 
            u.name AS username,
            u.login_id AS user_login_id,
+           u.bsc_address,
            DATE_FORMAT(w.created_at, '%Y-%m-%d %H:%i') AS formatted_created_at,
            DATE_FORMAT(w.processed_at, '%Y-%m-%d %H:%i') AS formatted_processed_at
     FROM withdrawals w
@@ -180,18 +108,98 @@ $query = "
     LIMIT ? OFFSET ?
 ";
 
-$stmt = $conn->prepare($query);
 $params[] = $limit;
 $params[] = $offset;
 $param_types .= 'ii';
+$stmt = $conn->prepare($query);
 $stmt->bind_param($param_types, ...$params);
 $stmt->execute();
 $result = $stmt->get_result();
 
-$pageTitle = "출금 관리";
-require_once __DIR__ . '/admin_header.php';
-?>
+// 통계 데이터 조회
+$stats_query = "
+    SELECT 
+        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_count,
+        SUM(CASE WHEN status = 'completed' THEN actual_amount_usdt ELSE 0 END) as total_withdrawn,
+        SUM(CASE WHEN status = 'completed' AND DATE(processed_at) = CURDATE() THEN actual_amount_usdt ELSE 0 END) as today_withdrawn
+    FROM withdrawals
+";
+$stats_result = $conn->query($stats_query);
+$stats = $stats_result->fetch_assoc();
 
+// 여기서 회사 계정의 USDT 및 BNB 잔고를 조회합니다.
+
+// 설정 정보 가져오기
+$bscNodeUrl = BSC_NODE_URL;
+$companyAddress = COMPANY_ADDRESS;
+$usdtContractAddress = USDT_CONTRACT_ADDRESS;
+
+// Web3 초기화
+$provider = new HttpProvider(new HttpRequestManager($bscNodeUrl, 5)); // 타임아웃 5초
+$web3 = new Web3($provider);
+
+// 회사 계정의 BNB 잔고 조회 (동기식 호출)
+$bnbBalanceWei = null;
+$web3->eth->getBalance($companyAddress, function ($err, $result) use (&$bnbBalanceWei) {
+    if ($err !== null) {
+        $bnbBalanceWei = 'error';
+    } else {
+        // BigNumber 객체를 문자열로 변환
+        if (method_exists($result, 'toString')) {
+            $bnbBalanceWei = $result->toString();
+        } elseif (is_array($result)) {
+            $bnbBalanceWei = $result['hex'] ?? $result[0] ?? 'error';
+        } else {
+            $bnbBalanceWei = (string)$result;
+        }
+    }
+});
+
+if ($bnbBalanceWei === 'error' || $bnbBalanceWei === null) {
+    $bnbBalance = '잔액 조회 실패';
+} else {
+    try {
+        // 16진수인 경우 10진수로 변환
+        if (substr($bnbBalanceWei, 0, 2) === '0x') {
+            $bnbBalanceWei = hexdec($bnbBalanceWei);
+        }
+        
+        // Wei를 BNB로 변환 (18자리 소수점)
+        $bnbBalance = bcdiv((string)$bnbBalanceWei, bcpow('10', '18', 0), 8);
+    } catch (Exception $e) {
+        error_log("BNB 잔액 변환 오류: " . $e->getMessage());
+        $bnbBalance = '잔액 변환 실패';
+    }
+}
+
+// 회사 계정의 USDT 잔고 조회 (동기식 호출)
+$usdtBalanceWei = null;
+$err = null;
+$contract = new Contract($provider, '[]'); // ABI는 빈 배열로 처리
+$data = '0x70a08231' . str_pad(substr($companyAddress, 2), 64, '0', STR_PAD_LEFT);
+
+$web3->eth->call([
+    'to' => $usdtContractAddress,
+    'data' => $data
+], function ($error, $result) use (&$usdtBalanceWei, &$err) {
+    $err = $error;
+    $usdtBalanceWei = $result;
+});
+
+if ($err !== null) {
+    $usdtBalance = '잔액 조회 실패';
+} else {
+    $decimals = 18; // USDT(BEP20)의 소수점 자리수
+    $balanceWei = Utils::toBn($usdtBalanceWei);
+    $usdtBalance = bcdiv($balanceWei, bcpow('10', $decimals, 0), $decimals);
+}
+
+// 페이지 제목 설정 및 헤더 포함
+$pageTitle = "출금 관리";
+include __DIR__ . '/admin_header.php';
+
+?>
 
 
 
@@ -224,7 +232,7 @@ require_once __DIR__ . '/admin_header.php';
     }
 
     .stat-value {
-        font-size: 1.1rem;
+        font-size: 0.9rem;
         color: #fff;
         font-weight: 600;
     }
@@ -233,6 +241,7 @@ require_once __DIR__ . '/admin_header.php';
         background: rgba(45, 45, 45, 0.9);
         padding: 16px;
         border-radius: 8px;
+        margin-top: 20px;
         margin-bottom: 20px;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
@@ -273,7 +282,7 @@ require_once __DIR__ . '/admin_header.php';
         padding: 8px 12px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         text-align: left;
-        font-size: 0.9rem;
+        font-size: 0.7rem;
         line-height: 1.4;
     }
 
@@ -287,7 +296,7 @@ require_once __DIR__ . '/admin_header.php';
     .status-badge {
         padding: 3px 8px;
         border-radius: 12px;
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         font-weight: 500;
         display: inline-block;
     }
@@ -379,7 +388,7 @@ require_once __DIR__ . '/admin_header.php';
 
     .btn-action {
         padding: 4px 8px;
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         min-width: auto;
         background: transparent;
         border: none;
@@ -402,24 +411,22 @@ require_once __DIR__ . '/admin_header.php';
 
     .table td {
         padding: 4px 8px;
-        font-size: 0.8rem;
+        font-size: 0.7rem;
     }
 
     .bulk-actions .btn-gold {
         padding: 4px 12px;
-        font-size: 0.8rem;
+        font-size: 0.7rem;
     }
 </style>
-
-<!-- HTML 부분 상단에 Web3.js 추가 -->
-<script src="https://cdn.jsdelivr.net/npm/web3@1.5.2/dist/web3.min.js"></script>
 
 
 <div class="container">
     <h1 class="text-2xl font-bold mb-6 text-orange">출금 관리</h1>
 
-    <!-- Stats Section -->
+    <!-- 통계 섹션 -->
     <div class="stats-row">
+        <!-- 통계 카드들 -->
         <div class="stat-card">
             <h3>처리 대기</h3>
             <div class="stat-value"><?php echo number_format($stats['pending_count']); ?>건</div>
@@ -436,9 +443,28 @@ require_once __DIR__ . '/admin_header.php';
             <h3>오늘 출금액</h3>
             <div class="stat-value"><?php echo number_format($stats['today_withdrawn'], 2); ?> USDT</div>
         </div>
+
+
+        <!-- 회사 계정 잔고 카드들 -->
+        <div class="stat-card">
+            <h3>회사 계정 BNB 잔액</h3>
+            <div class="stat-value">
+                <?php 
+                if (is_string($bnbBalance) && in_array($bnbBalance, ['잔액 조회 실패', '잔액 변환 실패'])) {
+                    echo $bnbBalance;
+                } else {
+                    echo number_format((float)$bnbBalance, 6) . ' BNB';
+                }
+                ?>
+            </div>
+        </div>
+        <div class="stat-card">
+            <h3>회사 계정 USDT 잔액</h3>
+            <div class="stat-value"><?php echo is_numeric($usdtBalance) ? number_format($usdtBalance, 6) . ' USDT' : $usdtBalance; ?></div>
+        </div>
     </div>
 
-    <!-- Search Filters -->
+    <!-- 검색 필터 -->
     <div class="filter-section">
         <form method="get" class="flex items-center gap-2">
             <input type="text" name="search" placeholder="회원명/아이디/트랜잭션" 
@@ -447,8 +473,8 @@ require_once __DIR__ . '/admin_header.php';
             
             <select name="status" class="p-2" style="width:120px">
                 <option value="">전체 상태</option>
-                <option value="pending" <?php echo isset($_GET['status']) && $_GET['status'] === 'pending' ? 'selected' : ''; ?>>처리대기</option>
-                <option value="completed" <?php echo isset($_GET['status']) && $_GET['status'] === 'completed' ? 'selected' : ''; ?>>완료</option>
+                <option value="pending" <?php echo (isset($_GET['status']) && $_GET['status'] === 'pending') ? 'selected' : ''; ?>>처리대기</option>
+                <option value="completed" <?php echo (isset($_GET['status']) && $_GET['status'] === 'completed') ? 'selected' : ''; ?>>완료</option>
             </select>
 
             <input type="date" name="date_from" 
@@ -467,17 +493,14 @@ require_once __DIR__ . '/admin_header.php';
         </form>
     </div>
 
-    <!-- Bulk Actions -->
+    <!-- 일괄 처리 버튼 -->
     <div class="bulk-actions">
         <button onclick="processBatchWithdrawals()" class="btn btn-gold">
             <i class="fas fa-check-double"></i> 일괄처리
         </button>
     </div>
 
-
-
-
-    <!-- Withdrawals Table -->
+    <!-- 출금 목록 테이블 -->
     <div class="table-responsive">
         <table>
             <thead>
@@ -535,11 +558,13 @@ require_once __DIR__ . '/admin_header.php';
                     </td>
                     <td>
                         <?php if ($row['status'] === 'pending'): ?>
+                            <!-- 처리 중인 경우 트랜잭션 해시 입력 가능 -->
                             <input type="text" 
                                    class="input-transaction" 
                                    data-withdrawal-id="<?php echo $row['id']; ?>" 
-                                   placeholder="트랜잭션 해시">
+                                   placeholder="트랜잭션 해시 입력 후 처리">
                         <?php elseif ($row['transaction_id']): ?>
+                            <!-- 완료된 경우 트랜잭션 링크 제공 -->
                             <a href="<?php echo $row['scan_link']; ?>" target="_blank" class="text-xs text-blue-400 hover:text-blue-300">
                                 <?php echo substr($row['transaction_id'], 0, 8); ?>...
                             </a>
@@ -548,10 +573,10 @@ require_once __DIR__ . '/admin_header.php';
                         <?php endif; ?>
                     </td>
                     <td>
-                        <span class="status-badge status-<?php echo $row['status']; ?>">
+                        <span class="status-badge fs-10  status-<?php echo $row['status']; ?>">
                             <?php
                             switch($row['status']) {
-                                case 'pending': echo '처리중'; break;
+                                case 'pending': echo '처리대기'; break;
                                 case 'completed': echo '완료'; break;
                                 case 'failed': echo '실패'; break;
                             }
@@ -562,8 +587,8 @@ require_once __DIR__ . '/admin_header.php';
                     <td><?php echo $row['formatted_processed_at'] ?: '-'; ?></td>
                     <td>
                         <?php if ($row['status'] === 'pending'): ?>
-                            <button class="btn-action btn-10 btn-primary" onclick="processWithdrawal(<?php echo $row['id']; ?>)" title="처리">
-                                <i class="fas fa-check"></i>처리
+                            <button class="btn-action btn-outline border-1 btn-10" onclick="processWithdrawal(<?php echo $row['id']; ?>)" title="처리">
+                                <i class="fas fa-check"></i> 처리
                             </button>
                         <?php endif; ?>
                     </td>
@@ -573,7 +598,7 @@ require_once __DIR__ . '/admin_header.php';
         </table>
     </div>
 
-    <!-- Pagination -->
+    <!-- 페이징 -->
     <?php if ($total_pages > 1): ?>
     <div class="pagination">
         <?php if ($page > 1): ?>
@@ -602,201 +627,87 @@ require_once __DIR__ . '/admin_header.php';
     <?php endif; ?>
 </div>
 
-
-
-
 <script>
-function toggleSelectAll(source) {
-    const checkboxes = document.getElementsByName('withdrawal_ids[]');
-    checkboxes.forEach(checkbox => checkbox.checked = source.checked);
-}
 
-function copyToClipboard(text) {
-    navigator.clipboard.writeText(text)
-        .then(() => {
-            showNotification('클립보드에 복사되었습니다.', 'success');
-        })
-        .catch(() => {
-            showNotification('복사에 실패했습니다.', 'error');
-        });
-}
-
-function updateTransaction(id, hash) {
-    if (!hash) return;
-    
-    if (!hash.match(/^0x[a-fA-F0-9]{64}$/)) {
-        showNotification('올바른 트랜잭션 해시를 입력하세요.', 'error');
-        return;
+    function toggleSelectAll(source) {
+        const checkboxes = document.querySelectorAll('input[name="withdrawal_ids[]"]');
+        checkboxes.forEach(checkbox => checkbox.checked = source.checked);
     }
 
-    fetch('', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            update_transaction: true,
-            withdrawal_id: id,
-            transaction_id: hash
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showNotification(data.message, 'success');
-            setTimeout(() => location.reload(), 1500);
-        } else {
-            throw new Error(data.message);
-        }
-    })
-    .catch(error => {
-        showNotification(error.message, 'error');
-    });
-}
-
-
-const WALLET_CONFIG = {
-    address: '<?php echo COMPANY_ADDRESS; ?>',
-    private_key: '<?php echo BSC_PRIVATE_KEY; ?>',
-    contract: '<?php echo USDT_CONTRACT_ADDRESS; ?>'
-};
-
-const ABI = [{
-    "constant": false,
-    "inputs": [
-        {"name": "_to","type": "address"},
-        {"name": "_value","type": "uint256"}
-    ],
-    "name": "transfer",
-    "outputs": [{"name": "","type": "bool"}],
-    "type": "function"
-}];
-
-async function sendUSDT(toAddress, amount) {
-    const web3 = new Web3('https://bsc-dataseed1.binance.org');
-    
-    try {
-        // BNB 잔액 확인
-        const balance = await web3.eth.getBalance(WALLET_CONFIG.address);
-        const balanceInBNB = web3.utils.fromWei(balance, 'ether');
-
-        if (parseFloat(balanceInBNB) < 0.005) {
-            throw new Error(`가스비(BNB)가 부족합니다. (현재: ${balanceInBNB} BNB)`);
-        }
-
-        const contract = new web3.eth.Contract(ABI, WALLET_CONFIG.contract);
-        const amountInWei = web3.utils.toWei(amount.toString(), 'ether');
-        
-        // 가스 견적 계산
-        const gasLimit = await contract.methods.transfer(toAddress, amountInWei)
-            .estimateGas({ from: WALLET_CONFIG.address });
-        const gasPrice = await web3.eth.getGasPrice();
-
-        const data = contract.methods.transfer(toAddress, amountInWei).encodeABI();
-        const nonce = await web3.eth.getTransactionCount(WALLET_CONFIG.address);
-
-        const tx = {
-            from: WALLET_CONFIG.address,
-            to: WALLET_CONFIG.contract,
-            gasPrice: gasPrice,
-            gas: Math.round(gasLimit * 1.2), // 20% 버퍼 추가
-            nonce: nonce,
-            data: data
-        };
-
-        console.log('Transaction details:', {
-            to: toAddress,
-            amount: amount,
-            gasPrice: web3.utils.fromWei(gasPrice, 'gwei') + ' gwei',
-            estimatedGas: gasLimit,
-            currentBalance: balanceInBNB + ' BNB'
-        });
-
-        const signedTx = await web3.eth.accounts.signTransaction(tx, WALLET_CONFIG.private_key);
-        const receipt = await web3.eth.sendSignedTransaction(signedTx.rawTransaction);
-        
-        return {
-            success: true,
-            txHash: receipt.transactionHash
-        };
-    } catch (error) {
-        console.error('USDT 전송 오류:', error);
-        return {
-            success: false,
-            error: error.message || '트랜잭션 실패'
-        };
-    }
-}
-
-// 출금 처리 함수
-async function processWithdrawal(id) {
-    if (!confirm('이 출금 요청을 처리하시겠습니까?')) return;
-
-    try {
-        const row = document.querySelector(`tr[data-id="${id}"]`);
-        const amount = parseFloat(row.querySelector('.amount-copy span').textContent.split(' ')[0].replace(/,/g, ''));
-        const toAddress = row.querySelector('.address-copy span').textContent.trim();
-
-        showNotification('출금 처리중입니다...', 'info');
-
-        // USDT 전송
-        const result = await sendUSDT(toAddress, amount);
-        if (!result.success) {
-            throw new Error(result.error);
-        }
-
-        // DB 업데이트
-        const response = await fetch('', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                update_transaction: true,
-                withdrawal_id: id,
-                transaction_id: result.txHash
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text)
+            .then(() => {
+                alert('클립보드에 복사되었습니다.');
             })
+            .catch(() => {
+                alert('복사에 실패했습니다.');
+            });
+    }
+
+    function processWithdrawal(withdrawalId) {
+        if (!confirm('해당 출금을 처리하시겠습니까?')) return;
+
+        fetch('withdrawals_process.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ withdrawal_id: withdrawalId }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('출금 처리 실패: ' + data.message + (data.errors ? '\n' + data.errors.join('\n') : ''));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('출금 처리 중 오류가 발생했습니다.');
         });
+    }
 
-        const data = await response.json();
-        if (data.success) {
-            showNotification('출금이 성공적으로 처리되었습니다.', 'success');
-            setTimeout(() => location.reload(), 1500);
-        } else {
-            throw new Error(data.message);
+    function processBatchWithdrawals() {
+        const checkboxes = document.querySelectorAll('input[name="withdrawal_ids[]"]:checked');
+        const selectedIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+
+        if (selectedIds.length === 0) {
+            alert('처리할 출금을 선택해주세요.');
+            return;
         }
-    } catch (error) {
-        showNotification('출금 처리 실패: ' + error.message, 'error');
-        console.error('Processing error:', error);
+
+        if (!confirm(`선택한 ${selectedIds.length}건의 출금을 처리하시겠습니까?`)) {
+            return;
+        }
+
+        fetch('withdrawals_process.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ withdrawal_ids: selectedIds }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('출금 처리 실패: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('출금 처리 중 오류가 발생했습니다.');
+        });
     }
-}
 
-
-async function processBatchWithdrawals() {
-    const checkboxes = document.getElementsByName('withdrawal_ids[]');
-    const selectedIds = Array.from(checkboxes)
-        .filter(cb => cb.checked)
-        .map(cb => parseInt(cb.value));
-
-    if (selectedIds.length === 0) {
-        showNotification('처리할 항목을 선택해주세요.', 'error');
-        return;
-    }
-
-    if (!confirm(`선택한 ${selectedIds.length}건의 출금을 처리하시겠습니까?`)) {
-        return;
-    }
-
-    for (const id of selectedIds) {
-        await processWithdrawal(id);
-    }
-}
-
-// Auto refresh if pending withdrawals exist
-setInterval(() => {
-    const pendingExists = document.querySelector('.status-pending') !== null;
-    if (pendingExists) {
-        location.reload();
-    }
-}, 30000);
 </script>
 
-<?php include __DIR__ . '/../includes/footer.php'; ?>
+
+<?php 
+$conn->close();
+include __DIR__ . '/../includes/footer.php';
+?>
