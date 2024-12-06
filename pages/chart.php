@@ -571,7 +571,7 @@ include __DIR__ . '/../includes/header.php';
         <div class="legend-color" style="background: #96e399;"></div>2스타
     </div>
     <div class="legend-item">
-        <div class="legend-color" style="background: #cfb144;"></div>3스타
+        <div class="legend-color" style="background: #55f4f5;"></div>3스타
     </div>
     <div class="legend-item">
         <div class="legend-color" style="background: #e3885b;"></div>4스타
@@ -797,7 +797,7 @@ include __DIR__ . '/../includes/header.php';
                         '회원': '#ffffff',
                         '1스타': '#FFBF00',
                         '2스타': '#96e399',
-                        '3스타': '#cfb144',
+                        '3스타': '#55f4f5',
                         '4스타': '#e3885b',
                         '5스타': '#f04141',
                         '6스타': '#a84bd6',

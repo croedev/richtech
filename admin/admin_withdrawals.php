@@ -28,7 +28,6 @@ $conn = db_connect();
 // 개인키를 환경 변수에서 가져옵니다.
 $privateKey = getenv('BSC_PRIVATE_KEY') ?: $_ENV['BSC_PRIVATE_KEY'] ?? null;
 
-// 디버깅을 위해 개인키의 값을 확인합니다.
 
 if (!$privateKey) {
     throw new Exception('환경 변수 BSC_PRIVATE_KEY가 설정되지 않았습니다.');
@@ -540,8 +539,8 @@ include __DIR__ . '/admin_header.php';
                         <div class="amount-copy">
                             <span><?php echo number_format($row['actual_amount_usdt'], 6); ?> USDT</span>
                             <?php if ($row['status'] === 'pending'): ?>
-                                <button class="btn btn-copy" onclick="copyToClipboard('<?php echo $row['actual_amount_usdt']; ?>')">
-                                    복사
+                                <button class="btn btn-copy fs-9" onclick="copyToClipboard('<?php echo $row['actual_amount_usdt']; ?>')">
+                                 <i class="fas fa-copy"></i>
                                 </button>
                             <?php endif; ?>
                         </div>
@@ -550,8 +549,8 @@ include __DIR__ . '/admin_header.php';
                         <div class="address-copy">
                             <span><?php echo $row['to_address']; ?></span>
                             <?php if ($row['status'] === 'pending'): ?>
-                                <button class="btn btn-copy" onclick="copyToClipboard('<?php echo $row['to_address']; ?>')">
-                                    복사
+                                <button class="btn btn-copy fs-9" onclick="copyToClipboard('<?php echo $row['to_address']; ?>')">
+                                    <i class="fas fa-copy"></i>
                                 </button>
                             <?php endif; ?>
                         </div>
@@ -566,7 +565,7 @@ include __DIR__ . '/admin_header.php';
                         <?php elseif ($row['transaction_id']): ?>
                             <!-- 완료된 경우 트랜잭션 링크 제공 -->
                             <a href="<?php echo $row['scan_link']; ?>" target="_blank" class="text-xs text-blue-400 hover:text-blue-300">
-                                <?php echo substr($row['transaction_id'], 0, 8); ?>...
+                                <?php echo substr($row['transaction_id'], 0, 16); ?>...
                             </a>
                         <?php else: ?>
                             -
