@@ -1,4 +1,345 @@
-t-muted">미등록</small>
+<?php
+error_reporting(E_ALL);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+ini_set('error_log', '/home/lidyahkc/dir/richtech.club/pages/error.log');
+
+session_start();
+require_once __DIR__ . '/../includes/config.php';
+require_once __DIR__ . '/admin_functions.php';
+
+// 관리자 권한 체크
+if (!isset($_SESSION['user_id']) || !in_array($_SESSION['user_id'], [1, 2])) {
+    header("Location: /login?redirect=admin/admin_members.php");
+    exit;
+}
+
+$conn = db_connect();
+
+// CSRF 토큰 생성
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+// 검색 조건 처리
+$search_conditions = [];
+$params = [];
+$param_types = '';
+
+// 고급 검색 필터 처리
+if (!empty($_GET['search_type']) && !empty($_GET['search_value'])) {
+    $searchType = $_GET['search_type'];
+    $searchValue = $_GET['search_value'];
+    
+    switch($searchType) {
+        case 'id':
+            $search_conditions[] = "u.login_id LIKE ?";
+            $params[] = "%$searchValue%";
+            $param_types .= 's';
+            break;
+        case 'name':
+            $search_conditions[] = "u.name LIKE ?";
+            $params[] = "%$searchValue%";
+            $param_types .= 's';
+            break;
+        case 'email':
+            $search_conditions[] = "u.email LIKE ?";
+            $params[] = "%$searchValue%";
+            $param_types .= 's';
+            break;
+        case 'phone':
+            $search_conditions[] = "u.phone LIKE ?";
+            $params[] = "%$searchValue%";
+            $param_types .= 's';
+            break;
+        case 'bsc_address':
+            $search_conditions[] = "u.bsc_address LIKE ?";
+            $params[] = "%$searchValue%";
+            $param_types .= 's';
+            break;
+    }
+}
+
+if (!empty($_GET['rank'])) {
+    $search_conditions[] = "u.rank = ?";
+    $params[] = $_GET['rank'];
+    $param_types .= 's';
+}
+
+if (!empty($_GET['status'])) {
+    $search_conditions[] = "u.status = ?";
+    $params[] = $_GET['status'];
+    $param_types .= 's';
+}
+
+if (!empty($_GET['date_from'])) {
+    $search_conditions[] = "DATE(u.created_at) >= ?";
+    $params[] = $_GET['date_from'];
+    $param_types .= 's';
+}
+
+if (!empty($_GET['date_to'])) {
+    $search_conditions[] = "DATE(u.created_at) <= ?";
+    $params[] = $_GET['date_to'];
+    $param_types .= 's';
+}
+
+if (!empty($_GET['min_amount'])) {
+    $search_conditions[] = "u.myAmount >= ?";
+    $params[] = floatval($_GET['min_amount']);
+    $param_types .= 'd';
+}
+
+if (!empty($_GET['organization'])) {
+    $search_conditions[] = "u.organization = ?";
+    $params[] = $_GET['organization'];
+    $param_types .= 's';
+}
+
+// WHERE 절 구성
+$where_clause = !empty($search_conditions) ? 'WHERE ' . implode(' AND ', $search_conditions) : '';
+
+// 페이지네이션 설정
+$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+$limit = isset($_GET['limit']) ? intval($_GET['limit']) : 20;
+$offset = ($page - 1) * $limit;
+
+// 전체 레코드 수 조회
+$count_query = "
+    SELECT COUNT(*) as total 
+    FROM users u 
+    LEFT JOIN users ref ON u.referred_by = ref.id
+    LEFT JOIN users sponsor ON u.sponsored_by = sponsor.id
+    $where_clause
+";
+
+$stmt = $conn->prepare($count_query);
+if (!empty($params)) {
+    $stmt->bind_param($param_types, ...$params);
+}
+$stmt->execute();
+$total_records = $stmt->get_result()->fetch_assoc()['total'];
+$total_pages = ceil($total_records / $limit);
+
+// 회원 통계 데이터 조회
+$stats = $conn->query("
+    SELECT 
+        COUNT(*) as total_members,
+        COUNT(CASE WHEN status = 'active' THEN 1 END) as active_members,
+        COUNT(CASE WHEN status = 'inactive' THEN 1 END) as inactive_members,
+        SUM(myAmount) as total_amount,
+        SUM(point) as total_points,
+        SUM(commission_total) as total_commission
+    FROM users
+")->fetch_assoc();
+
+// 회원 목록 조회
+$query = "
+    SELECT 
+        u.*,
+        ref.name as referrer_name,
+        ref.login_id as referrer_login_id,
+        sponsor.name as sponsor_name,
+        sponsor.login_id as sponsor_login_id,
+        (SELECT COUNT(*) FROM users WHERE referred_by = u.id) as direct_referrals
+    FROM users u
+    LEFT JOIN users ref ON u.referred_by = ref.id
+    LEFT JOIN users sponsor ON u.sponsored_by = sponsor.id
+    $where_clause
+    ORDER BY u.created_at DESC
+    LIMIT ?, ?
+";
+
+$stmt = $conn->prepare($query);
+$params[] = $offset;
+$params[] = $limit;
+$param_types .= 'ii';
+$stmt->bind_param($param_types, ...$params);
+$stmt->execute();
+$members = $stmt->get_result();
+
+// 소속 센터 목록 조회
+$organizations = $conn->query("SELECT DISTINCT organization FROM users WHERE organization IS NOT NULL ORDER BY organization");
+
+require_once __DIR__ . '/admin_header.php';
+?>
+
+<!-- 통계 카드 섹션 -->
+<div class="row mb-4">
+    <div class="col-md-2">
+        <div class="stat-card">
+            <h5>전체 회원</h5>
+            <div class="stat-value"><?php echo number_format($stats['total_members']); ?>명</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="stat-card">
+            <h5>활성 회원</h5>
+            <div class="stat-value"><?php echo number_format($stats['active_members']); ?>명</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="stat-card">
+            <h5>구매 총액</h5>
+            <div class="stat-value">$<?php echo number_format($stats['total_amount'], 2); ?></div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="stat-card">
+            <h5>포인트 총액</h5>
+            <div class="stat-value"><?php echo number_format($stats['total_points'], 4); ?></div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="stat-card">
+            <h5>수당 총액</h5>
+            <div class="stat-value">$<?php echo number_format($stats['total_commission'], 2); ?></div>
+        </div>
+    </div>
+</div>
+
+<!-- 검색 필터 -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="fas fa-filter"></i> 검색 필터</h5>
+    </div>
+    <div class="card-body">
+        <form method="GET" class="row g-2">
+            <div class="col-md-2">
+                <select name="search_type" class="form-select form-select-sm">
+                    <option value="">검색 유형</option>
+                    <option value="id" <?php echo $_GET['search_type'] == 'id' ? 'selected' : ''; ?>>아이디</option>
+                    <option value="name" <?php echo $_GET['search_type'] == 'name' ? 'selected' : ''; ?>>이름</option>
+                    <option value="email" <?php echo $_GET['search_type'] == 'email' ? 'selected' : ''; ?>>이메일</option>
+                    <option value="phone" <?php echo $_GET['search_type'] == 'phone' ? 'selected' : ''; ?>>전화번호</option>
+                    <option value="bsc_address" <?php echo $_GET['search_type'] == 'bsc_address' ? 'selected' : ''; ?>>BSC 주소</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <input type="text" name="search_value" class="form-control form-control-sm" 
+                       value="<?php echo htmlspecialchars($_GET['search_value'] ?? ''); ?>" 
+                       placeholder="검색어 입력">
+            </div>
+            <div class="col-md-2">
+                <select name="rank" class="form-select form-select-sm">
+                    <option value="">전체 직급</option>
+                    <?php
+                    $ranks = ['회원', '1스타', '2스타', '3스타', '4스타', '5스타', '6스타', '7스타'];
+                    foreach ($ranks as $rank) {
+                        echo '<option value="' . $rank . '"' . 
+                             (isset($_GET['rank']) && $_GET['rank'] === $rank ? ' selected' : '') . 
+                             '>' . $rank . '</option>';
+                    }
+                    ?>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="organization" class="form-select form-select-sm">
+                    <option value="">전체 소속</option>
+                    <?php while ($org = $organizations->fetch_assoc()): ?>
+                        <option value="<?php echo htmlspecialchars($org['organization']); ?>"
+                                <?php echo isset($_GET['organization']) && $_GET['organization'] === $org['organization'] ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($org['organization']); ?>
+                        </option>
+                    <?php endwhile; ?>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <div class="input-group input-group-sm">
+                    <input type="date" name="date_from" class="form-control" 
+                           value="<?php echo htmlspecialchars($_GET['date_from'] ?? ''); ?>">
+                    <span class="input-group-text">~</span>
+                    <input type="date" name="date_to" class="form-control"
+                           value="<?php echo htmlspecialchars($_GET['date_to'] ?? ''); ?>">
+                </div>
+            </div>
+            <div class="col-md-12">
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-sm btn-gold">
+                        <i class="fas fa-search"></i> 검색
+                    </button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="location.href='?'">
+                        <i class="fas fa-redo"></i> 초기화
+                    </button>
+                    <button type="button" class="btn btn-sm btn-success" onclick="AdminMemberManager.exportToExcel()">
+                        <i class="fas fa-file-excel"></i> Excel
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 회원 목록 테이블 -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-users"></i> 회원 목록</h5>
+        <div>
+            <span class="text-muted">총 <?php echo number_format($total_records); ?>명</span>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover" id="membersTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>회원정보</th>
+                        <th>연락처</th>
+                        <th>추천/후원</th>
+                        <th>실적정보</th>
+                        <th>BSC주소</th>
+                        <th>상태/가입일</th>
+                        <th class="no-sort">관리</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php while ($member = $members->fetch_assoc()): ?>
+                    <tr>
+                        <td><?php echo $member['id']; ?></td>
+                        <td>
+                            <div class="d-flex flex-column">
+                                <strong><?php echo htmlspecialchars($member['name']); ?></strong>
+                                <small class="text-muted"><?php echo htmlspecialchars($member['login_id']); ?></small>
+                                <span class="badge bg-info"><?php echo htmlspecialchars($member['rank']); ?></span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="d-flex flex-column">
+                                <small><?php echo htmlspecialchars($member['email']); ?></small>
+                                <small><?php echo htmlspecialchars($member['phone']); ?></small>
+                                <small class="text-muted"><?php echo htmlspecialchars($member['country']); ?></small>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="d-flex flex-column">
+                                <small>추천: <?php echo $member['referrer_login_id'] ? htmlspecialchars($member['referrer_login_id']) : '-'; ?></small>
+                                <small>후원: <?php echo $member['sponsor_login_id'] ? htmlspecialchars($member['sponsor_login_id']) : '-'; ?></small>
+                                <small>직추천: <?php echo number_format($member['direct_referrals']); ?>명</small>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="d-flex flex-column">
+                                <small>구매: $<?php echo number_format($member['myAmount'], 2); ?></small>
+                                <small>수당: $<?php echo number_format($member['commission_total'], 2); ?></small>
+                                <small>포인트: <?php echo number_format($member['point'], 4); ?></small>
+                            </div>
+                        </td>
+                        <td>
+                            
+                        Admin Members Management Page (Continued)
+
+<div class="d-flex flex-column">
+                                <?php if ($member['bsc_address']): ?>
+                                    <small class="text-truncate" style="max-width: 150px;" title="<?php echo htmlspecialchars($member['bsc_address']); ?>">
+                                        <?php echo substr($member['bsc_address'], 0, 10) . '...' . substr($member['bsc_address'], -8); ?>
+                                    </small>
+                                    <button class="btn btn-xs btn-outline-secondary mt-1" 
+                                            onclick="AdminMemberManager.checkBscBalance('<?php echo $member['bsc_address']; ?>')">
+                                        잔액확인
+                                    </button>
+                                <?php else: ?>
+                                    <small class="text-muted">미등록</small>
                                 <?php endif; ?>
                             </div>
                         </td>

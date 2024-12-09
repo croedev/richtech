@@ -1,41 +1,19 @@
 {
-  "name": "RichTech Club - 부자들의 투자 커뮤니티",
-  "short_name": "RichTech",
-  "description": "부자들의 클럽, RichTech Club - 투자 정보 공유 및 커뮤니티",
+  "name": "야미 그린농장",
+  "short_name": "야미그린농장",
+  "start_url": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
-  "scope": "/",
-  "start_url": "/?source=pwa",
-  "theme_color": "#1a1a1a",
-  "background_color": "#000000",
-  "categories": ["finance", "business", "investment"],
+  "background_color": "#ffffff",
+  "theme_color": "#d4af37",
   "icons": [
     {
-      "src": "/assets/images/icon-192x192.png",
+      "src": "/assets/images/icon_yammi.png",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/png"
     },
     {
-      "src": "/assets/images/icon-512x512.png",
+      "src": "/assets/images/icon_yammi.png",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "로그인",
-      "short_name": "로그인",
-      "description": "로그인 페이지로 이동",
-      "url": "/login",
-      "icons": [{ "src": "/assets/images/icon-192x192.png", "sizes": "192x192" }]
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "/assets/screenshots/home.png",
-      "sizes": "1280x720",
       "type": "image/png"
     }
   ]

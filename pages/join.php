@@ -1,4 +1,400 @@
-          font-size: 0.7rem;
+<?php
+error_reporting(E_ALL);
+ini_set('display_errors', 0); // 화면에 에러 표시를 끔
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/error.log');
+
+require_once __DIR__ . '/../includes/config.php';
+
+$conn = db_connect();
+
+// ID 중복 체크 함수
+function checkDuplicateLoginId($conn, $loginId) {
+    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM users WHERE login_id = ?");
+    $stmt->bind_param("s", $loginId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+    $count = $row['count'];
+    $stmt->close();
+    return $count > 0;
+}
+
+// 후원인 조회 함수 (좌우 포지션 정보 포함)
+function checkSponsor($conn, $sponsorId) {
+    $stmt = $conn->prepare("
+        SELECT u.name, u.login_id, u.id AS sponsor_id,
+            SUM(CASE WHEN s.position = 'left' THEN 1 ELSE 0 END) as left_count,
+            SUM(CASE WHEN s.position = 'right' THEN 1 ELSE 0 END) as right_count
+        FROM users u
+        LEFT JOIN users s ON s.sponsored_by = u.id
+        WHERE u.login_id = ?
+        GROUP BY u.id
+    ");
+    $stmt->bind_param("s", $sponsorId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $sponsor = $result->fetch_assoc();
+    $stmt->close();
+    return $sponsor;
+}
+
+// 추천인 조회 함수
+function checkReferrer($conn, $referrerId) {
+    $stmt = $conn->prepare("SELECT name, login_id, id AS referrer_id FROM users WHERE login_id = ?");
+    $stmt->bind_param("s", $referrerId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $referrer = $result->fetch_assoc();
+    $stmt->close();
+    return $referrer;
+}
+
+// AJAX 요청 처리
+if (isset($_POST['action'])) {
+    header('Content-Type: application/json');
+
+    if ($_POST['action'] === 'checkDuplicateLoginId') {
+        $loginId = $_POST['loginId'];
+        $isDuplicate = checkDuplicateLoginId($conn, $loginId);
+        
+        if (empty($loginId)) {
+            $response = array('status' => 'error', 'message' => '아이디를 입력해주세요.');
+            http_response_code(400);
+        } elseif ($isDuplicate) {
+            $response = array('status' => 'error', 'message' => '이미 가입된 ID입니다.');
+            http_response_code(400);
+        } else {
+            $response = array('status' => 'success', 'message' => '등록 가능한 ID입니다.');
+        }
+        
+        echo json_encode($response);
+        exit;
+    }
+
+    if ($_POST['action'] === 'checkSponsor') {
+        $sponsorId = $_POST['sponsorId'];
+        $sponsor = checkSponsor($conn, $sponsorId);
+        
+        if (empty($sponsor)) {
+            $response = array('status' => 'error', 'message' => '입력하신 ID는 존재하지 않습니다. 다시 후원인 ID를 입력하세요.');
+            http_response_code(400);
+        } else {
+            $left_count = $sponsor['left_count'] ?: 0;
+            $right_count = $sponsor['right_count'] ?: 0;
+
+            $positions = [];
+            if ($left_count < 1) $positions[] = 'left';
+            if ($right_count < 1) $positions[] = 'right';
+
+            if (empty($positions)) {
+                $response = array('status' => 'error', 'message' => $sponsor['name'] . '(' . $sponsor['login_id'] . ')님은 좌우 모두 등록되어 추가 등록할 수 없습니다. 다른 후원인을 선택하세요.');
+                http_response_code(400);
+            } else {
+                $response = array(
+                    'status' => 'success',
+                    'message' => $sponsor['name'] . '(' . $sponsor['login_id'] . ')님을 후원인으로 등록 가능합니다.',
+                    'positions' => $positions
+                );
+            }
+        }
+        
+        echo json_encode($response);
+        exit;
+    }
+
+    if ($_POST['action'] === 'checkReferrer') {
+        $referrerId = $_POST['referrerId'];
+        $referrer = checkReferrer($conn, $referrerId);
+        
+        if (empty($referrer)) {
+            $response = array('status' => 'error', 'message' => $referrerId . '님은 존재하지 않음. 다시 입력하세요.');
+            http_response_code(400);
+        } else {
+            $response = array('status' => 'success', 'message' => $referrer['name'] . '(' . $referrer['login_id'] . ')님을 추천인 등록 가능.');
+        }
+        
+        echo json_encode($response);
+        exit;
+    }
+}
+
+// 회원가입 처리
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['action'])) {
+    header('Content-Type: application/json');
+
+    $errors = [];
+    $success = '';
+
+    try {
+        // 입력 데이터 수집 및 검증
+        $login_id = trim($_POST['user_id']); // 입력받은 로그인 아이디
+        $name = trim($_POST['name']);
+        $email = trim($_POST['email']); 
+        $phone = preg_replace("/[^0-9]/", "", $_POST['phone']);
+        $phone_formatted = substr($phone, 0, 3) . '-' . substr($phone, 3, 4) . '-' . substr($phone, 7);
+        $country = isset($_POST['country']) ? trim($_POST['country']) : '';
+        $organization = isset($_POST['organization']) ? trim($_POST['organization']) : '';
+        $tron_address = isset($_POST['tron_wallet']) ? trim($_POST['tron_wallet']) : '';
+        $password = $_POST['password'];
+        $confirm_password = $_POST['confirm_password'];
+        $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+        $sponsored_by = trim($_POST['sponsored_by']);
+        $position = isset($_POST['position']) ? $_POST['position'] : null;
+        $referred_by = trim($_POST['referred_by']);
+        $agree = isset($_POST['agree']) ? $_POST['agree'] : '';
+
+        // 후원인과 추천인 ID 초기화
+        $sponsored_by_id = null;
+        $referred_by_id = null;
+
+        if ($agree !== 'Y') {
+            $errors['agree'] = "개인정보 수집 및 이용에 동의해주세요.";
+        }
+
+        if (empty($login_id)) {
+            $errors['user_id'] = "아이디를 입력해주세요.";
+        } else {
+            // ID 중복 체크
+            if (checkDuplicateLoginId($conn, $login_id)) {
+                $errors['user_id'] = "이미 사용 중인 ID입니다.";
+            }
+        }
+
+        if (empty($password)) {
+            $errors['password'] = "비밀번호를 입력해주세요.";
+        } else if ($password !== $confirm_password) {
+            $errors['password'] = "비밀번호가 일치하지 않습니다.";
+        }
+
+        if (empty($name)) {
+            $errors['name'] = "이름을 입력해주세요.";
+        }
+
+        if (empty($email)) {
+            $errors['email'] = "이메일을 입력해주세요.";
+        } else if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $errors['email'] = "유효한 이메일 주소를 입력해주세요.";
+        }
+
+        if (empty($phone)) {
+            $errors['phone'] = "전화번호를 입력해주세요.";
+        }
+
+        if (empty($organization)) {
+            $errors['organization'] = "소속을 선택해주세요.";
+        }
+
+        // 트론 지갑 주소 검증
+        if (!empty($tron_address) && !preg_match('/^T[0-9a-zA-Z]{33}$/', $tron_address)) {
+            $errors['tron_wallet'] = "유효하지 않은 트론 지갑 주소입니다.";
+        }
+
+        // 후원인 확인
+        if (!empty($sponsored_by)) {
+            $sponsor = checkSponsor($conn, $sponsored_by);
+            if (empty($sponsor)) {
+                $errors['sponsored_by'] = "존재하지 않는 후원인 ID입니다.";
+            } else {
+                $sponsored_by_id = $sponsor['sponsor_id']; // 후원인의 사용자 ID
+
+                $left_count = $sponsor['left_count'] ?: 0;
+                $right_count = $sponsor['right_count'] ?: 0;
+
+                $available_positions = [];
+                if ($left_count < 1) $available_positions[] = 'left';
+                if ($right_count < 1) $available_positions[] = 'right';
+
+                if (empty($available_positions)) {
+                    $errors['sponsored_by'] = "후원인이 이미 좌우에 회원을 모두 보유하고 있습니다. 다른 후원인을 선택해 주세요.";
+                } else {
+                    if (empty($position)) {
+                        $errors['position'] = "후원인의 위치를 선택해주세요.";
+                    } elseif (!in_array($position, $available_positions)) {
+                        $errors['position'] = "선택하신 위치는 사용할 수 없습니다.";
+                    }
+                }
+            }
+        }
+
+        // 추천인 확인
+        if (!empty($referred_by)) {
+            $referrer = checkReferrer($conn, $referred_by);
+            if (empty($referrer)) {
+                $errors['referred_by'] = "존재하지 않는 추천인 ID입니다.";
+            } else {
+                $referred_by_id = $referrer['referrer_id']; // 추천인의 사용자 ID
+            }
+        }
+
+        if (!empty($errors)) {
+            throw new Exception("입력 오류가 발생했습니다.");
+        }
+
+        $conn->begin_transaction();
+
+        // 사용자 정보 저장
+        $stmt = $conn->prepare("INSERT INTO users (login_id, name, email, phone, country, organization, password, sponsored_by, position, referred_by, tron_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("sssssssisss", $login_id, $name, $email, $phone_formatted, $country, $organization, $hashed_password, $sponsored_by_id, $position, $referred_by_id, $tron_address);
+
+        if (!$stmt->execute()) {
+            throw new Exception("사용자 정보 저장 중 오류가 발생했습니다: " . $stmt->error);
+        }
+
+        $new_user_id = $conn->insert_id;
+
+        // 추천 코드 및 QR 코드 생성 (함수는 별도로 구현되어 있어야 합니다)
+        $new_referral_code = generateReferralCode($new_user_id);
+        $new_referral_link = SITE_URL . "/join?ref=" . $new_referral_code;
+        $qr_code = generateQRCode($new_referral_link);
+
+        $stmt = $conn->prepare("UPDATE users SET referral_code = ?, referral_link = ?, qr_code = ? WHERE id = ?");
+        $stmt->bind_param("sssi", $new_referral_code, $new_referral_link, $qr_code, $new_user_id);
+
+        if (!$stmt->execute()) {
+            throw new Exception("추천 코드 및 QR 코드 업데이트 중 오류가 발생했습니다: " . $stmt->error);
+        }
+
+        $conn->commit();
+
+        $success = "회원가입이 성공적으로 완료되었습니다.";
+
+        echo json_encode([
+            'success' => true,
+            'message' => $success
+        ]);
+    } catch (Exception $e) {
+        if ($conn->in_transaction) {
+            $conn->rollback();
+        }
+        $error_message = "회원가입 중 오류가 발생했습니다: " . $e->getMessage();
+        error_log("Join error: " . $error_message);
+        echo json_encode([
+            'success' => false,
+            'errors' => $errors,
+            'message' => $error_message
+        ]);
+        http_response_code(500);
+    }
+    exit;
+}
+
+// 추천인 코드 처리
+$referral_code = isset($_GET['ref']) ? $_GET['ref'] : '';
+$referrer_info = '';
+$referrer_user_id = '';
+if ($referral_code) {
+    $stmt = $conn->prepare("SELECT login_id, name FROM users WHERE referral_code = ?");
+    $stmt->bind_param("s", $referral_code);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    if ($row = $result->fetch_assoc()) {
+        $referrer_info = $row['name'] . ' (' . $row['login_id'] . ')';
+        $referrer_user_id = $row['login_id'];
+    }
+    $stmt->close();
+}
+
+// 소속단체 목록 가져오기 (조직 이름을 사용)
+$org_query = "SELECT id, name FROM organizations ORDER BY name ASC";
+$org_result = $conn->query($org_query);
+$organizations = [];
+while ($row = $org_result->fetch_assoc()) {
+    $organizations[] = $row;
+}
+
+$error = '';
+$success = '';
+
+$pageTitle = '회원가입';
+include __DIR__ . '/../includes/header.php';
+?>
+
+<style>
+        .join-container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 30px;
+            overflow-y: auto;
+            height: calc(100vh - 130px);
+            background-color: #000;
+            color: #fff;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-label {
+            display: block;
+            color: #d4af37;
+            margin-bottom: 3px;
+            font-size: 0.8rem;
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 7px 10px;
+            border: 1px solid #555;
+            background-color: #333;
+            color: #fff;
+            font-size: 0.9rem;
+            border-radius: 4px;
+        }
+
+        .btn-gold {
+            background: linear-gradient(to right, #d4af37, #f2d06b);
+            color: #000;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            display: block;
+            margin: 30px auto;
+            font-weight: bold;
+        }
+
+        .error {
+            color: #ff6b6b;
+            margin-bottom: 10px;
+            font-family: 'Noto Serif KR', serif;
+        }
+
+        .success {
+            color: #4CAF50;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 1.1rem;
+            font-family: 'Noto Serif KR', serif;
+        }
+
+        .check-button {
+            background-color: #555;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+            font-size: 0.7rem;
+            width: 30%;
+        }
+
+        .password-group {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .password-group .form-group {
+            width: 48%;
+        }
+
+        .validation-message {
+            color: #ff6b6b;
+            margin-top: 5px;
+            font-size: 0.7rem;
             font-family: 'Noto Serif KR', serif;
             text-align: left;
         }
